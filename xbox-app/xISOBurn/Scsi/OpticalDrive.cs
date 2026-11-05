@@ -133,7 +133,7 @@ namespace xISOBurn.Scsi
                 }
 
                 result.ScsiStatus = _out[OffScsiStatus];
-                int senseLen = Math.Min(_out[OffSenseLength], SenseSize);
+                int senseLen = Math.Min((int)_out[OffSenseLength], SenseSize);
                 uint senseOff = Bytes.LE32(_out, OffSenseOffset);
                 if (result.ScsiStatus != 0 && senseLen > 0 && senseOff >= SptSize && senseOff + senseLen <= received)
                 {
@@ -173,8 +173,10 @@ namespace xISOBurn.Scsi
 
         public void Dispose()
         {
-            // CustomDevice expõe IClosable (IDisposable em C#); o XBSX2 também o fecha.
-            var d = _device as IDisposable;
+            // Os metadados do SDK não declaram IClosable em CustomDevice, mas o XBSX2 consulta e fecha
+            // em tempo de execução (try_as<IClosable>). Mesmo efeito aqui: teste dinâmico via object.
+            object boxed = _device;
+            var d = boxed as IDisposable;
             if (d != null) d.Dispose();
         }
     }
