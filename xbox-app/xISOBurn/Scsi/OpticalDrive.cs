@@ -196,9 +196,17 @@ namespace xISOBurn.Scsi
 
                 if (received < SptSize)
                 {
-                    // Logging the raw bytes helps to understand what the Xbox driver returns in this case.
+                    // Seen on the console: "38 00 02" = Length 0x0038 (56) + ScsiStatus 0x02, i.e. the
+                    // driver returned only the first 3 bytes of the structure for a CHECK CONDITION and
+                    // dropped the sense data. Report it as the SCSI failure it is (REQUEST SENSE follows).
                     var raw = new System.Text.StringBuilder();
                     for (int i = 0; i < Math.Min((int)received, 16); i++) raw.Append(_out[i].ToString("x2")).Append(' ');
+                    if (received >= 3 && Bytes.LE16(_out, OffLength) == SptSize && _out[OffScsiStatus] != 0)
+                    {
+                        result.ScsiStatus = _out[OffScsiStatus];
+                        result.IoctlError = "truncated response (" + raw.ToString().Trim() + ")";
+                        return result;
+                    }
                     result.IoctlOk = false;
                     result.IoctlError = "short response (" + received + " bytes: " + raw.ToString().Trim() + ")";
                     return result;

@@ -22,6 +22,39 @@ The first full read of the test DVD (build 0.1.5.0, one pass with 5 block retrie
 - With immediate retries every ECC block cost ~100 commands (~10 minutes per revolution). In 1h26 the
   read advanced only ~460 sectors.
 
+## Second run: the multi-pass rescue (build 0.1.6.0)
+
+- Pass 1 read **LBA 0 to 2,151,871 again without errors** in 20 minutes, the same 64.86% as before.
+- From LBA 2,151,872 **everything failed**, including sectors that read fine in the first run
+  (2,151,888–2,151,935). Pass 1 jumped through the rest of the disc and **all 9 samples between
+  LBA 2,156,032 and 3,196,928 failed**:
+  - up to LBA ~2.41M: `05/20/00` after ~6.5–8.5 s;
+  - from LBA ~2.67M: a 3-byte truncated response, `38 00 02` (Length 56 + status CHECK CONDITION,
+    sense dropped by the driver), after only ~1.5–2 s.
+- In pass 1b, after a few blocks that still followed the 16-bad/48-good pattern, every block from
+  LBA 2,152,064 failed. It was paused at LBA 2,155,727.
+- MODE SENSE works on this drive: the error recovery page reports **read retry count 24**, which
+  explains the ~6.5 s per failing read.
+- Result: ok 2,151,968 (64.86%), pending 4,336, not tried 1,161,495. That is 2.22 GiB of the disc
+  (81% of layer 1) still unread.
+
+Two explanations fit, and the **readability scan** tells them apart:
+1. **The disc** is unreadable on this drive past ~LBA 2.15M (layer 1 damage, e.g. delamination or
+   disc rot, which would also explain the PC drive's `ID CRC OR ECC ERROR`).
+2. **The drive** gets into a bad state after hitting the defect and then fails good sectors too.
+
+### Readability scan (Scan disc)
+
+Reads one 16-sector ECC block at about 90 spots across the disc, once each, and writes nothing.
+After every failure it re-reads a reference block in layer 0 that is known to be good. If the
+reference also fails, it's the drive, and the scan logs how long the drive takes to recover. The
+log marks each spot with its layer and the DVD file it belongs to. **Run it right after a full
+power-off of the console** (hold the power button 10 s, unplug for 30 s), before any rescue.
+
+**Detect disc** now also lists the DVD files (ISO9660) with their LBA ranges, and the rescue
+summary shows how much of each file has been read. So it's possible to tell which part of the
+movie is missing.
+
 ## How the rescue works
 
 | Pass | What it does | Status after |

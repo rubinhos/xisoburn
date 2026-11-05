@@ -29,6 +29,7 @@ namespace xISOBurn.Core
         public bool Udf;
         public long TotalSectors = -1;
         public string TotalSource = "";
+        public List<DiscFile> Files = new List<DiscFile>();
         public readonly List<string> Warnings = new List<string>();
 
         public static async Task<DiscProbe> RunAsync(OpticalDrive drive, uint timeout, Logger log)
@@ -87,6 +88,18 @@ namespace xISOBurn.Core
                 p.VolumeLabel = Bytes.Ascii(sec, 40, 32);
                 p.Iso9660Sectors = Bytes.LE32(sec, 80);
                 log.Info("ISO9660: \"" + p.VolumeLabel + "\", " + p.Iso9660Sectors + " blocks");
+                try
+                {
+                    p.Files = await IsoFiles.ReadAsync(drive, (byte[])sec.Clone(), timeout);
+                    log.Info("Files (" + p.Files.Count + "):");
+                    foreach (var f in p.Files)
+                        log.Info("  " + f.Path.PadRight(24) + " LBA " + f.Lba.ToString().PadLeft(8) + "-" + (f.End - 1).ToString().PadRight(8) +
+                                 " " + (f.Size / 1048576.0).ToString("0.0").PadLeft(7) + " MiB");
+                }
+                catch (Exception ex)
+                {
+                    log.Info("Could not list the files: " + ex.Message);
+                }
             }
             rc = await drive.SendAsync(ScsiCommands.Read10(256, 1), SectorSize, sec, 0, timeout);
             if (rc.Success && Bytes.LE16(sec, 0) == 2)
@@ -159,8 +172,9 @@ namespace xISOBurn.Core
             if (Pfi != null && Pfi.NumberOfLayers > 1)
                 yield return "Layer change at LBA " + Pfi.Layer0Sectors.ToString("N0");
             if (Cpst >= 0)
-                yield return "Protection: " + CpstName(Cpst) + (Cpst == 1 ? " (the image may come out scrambled)" : "");
-            foreach (var w in Warnings) yield return "Warning: " + w;
+                yield return "Protection: " + CpstName(Cpst) + (Cpst == 1 ? " (the image may come out scrambled)" : "") +
+                             (Files.Count > 0 ? " | " + Files.Count + " files" : "") +
+                             (Warnings.Count > 0 ? " | " + Warnings.Count + " warning(s) in the log" : "");
         }
 
         private static string CpstName(int cpst)

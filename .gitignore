@@ -9,6 +9,9 @@ xbox-app/**/BundleArtifacts/
 # Signing certificates: NEVER commit the private key
 *.pfx
 
+# Logs and maps copied from the console for analysis
+log/
+
 # Workflow output / local tests
 out/
 *.iso

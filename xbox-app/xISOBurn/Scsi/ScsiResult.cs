@@ -27,6 +27,7 @@ namespace xISOBurn.Scsi
                 return "OK (" + DataLength + " bytes, " + ElapsedMs.ToString("0.0") + " ms)";
             return "SCSI status 0x" + ScsiStatus.ToString("X2") +
                    (Sense != null ? ", sense " + Sense : ", no sense") +
+                   (string.IsNullOrEmpty(IoctlError) ? "" : ", " + IoctlError) +
                    " (" + ElapsedMs.ToString("0.0") + " ms)";
         }
     }

@@ -215,6 +215,7 @@ namespace xISOBurn.Core
             _log.Info("Disc: " + _map.Summary());
             _log.Info("Time this run: " + FormatTime(result.Elapsed));
             LogBadRanges();
+            LogFileCoverage();
             if (result.Sha256 != null) _log.Info("SHA-256 of the image: " + result.Sha256);
             _log.Info("Map: " + _mapPath);
             return result;
@@ -601,6 +602,28 @@ namespace xISOBurn.Core
                 pos = e;
             }
             if (ranges > 40) _log.Info("  ... " + (ranges - 40) + " more range(s); see the .map file.");
+        }
+
+        /// <summary>How much of each file is already in the image: tells which part of the movie is missing.</summary>
+        private void LogFileCoverage()
+        {
+            if (_probe.Files == null || _probe.Files.Count == 0) return;
+            _log.Info("Files (share of sectors read OK):");
+            foreach (var f in _probe.Files)
+            {
+                long start = Math.Min(f.Lba, _map.TotalSectors), end = Math.Min(f.End, _map.TotalSectors);
+                if (end <= start) continue;
+                long ok = _map.CountIn(SectorState.Ok, start, end);
+                long missing = (end - start) - ok;
+                string line = "  " + f.Path.PadRight(24) + " " + (ok * 100.0 / (end - start)).ToString("0.00").PadLeft(6) + "%";
+                if (missing > 0)
+                {
+                    long firstMissing = start;
+                    while (firstMissing < end && _map.Get(firstMissing) == SectorState.Ok) firstMissing++;
+                    line += "  missing " + missing + " sector(s), first at " + (firstMissing - f.Lba) * 100 / (end - start) + "% of the file";
+                }
+                _log.Info(line);
+            }
         }
 
         public static string FormatTime(TimeSpan t)

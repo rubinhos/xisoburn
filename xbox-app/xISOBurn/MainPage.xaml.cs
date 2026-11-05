@@ -80,6 +80,7 @@ namespace xISOBurn
             _busy = busy;
             DetectButton.IsEnabled = !busy;
             CopyButton.IsEnabled = !busy;
+            ScanButton.IsEnabled = !busy;
             SpikeButton.IsEnabled = !busy;
             CancelButton.IsEnabled = copying;
             if (copying) CancelButton.Focus(FocusState.Programmatic);
@@ -215,6 +216,50 @@ namespace xISOBurn
                 " | Phase remaining: " + (p.Remaining.HasValue ? RescueJob.FormatTime(p.Remaining.Value) : "-") + "\n" +
                 "Disc: " + okPct.ToString("0.000") + "% read | bad " + p.Bad.ToString("N0") + " | pending " + p.Pending.ToString("N0") +
                 " | not tried " + p.Untried.ToString("N0");
+        }
+
+        private async void ScanButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_busy) return;
+            SetBusy(true, false);
+            var display = new DisplayRequest();
+            bool displayActive = false;
+            try
+            {
+                string msg;
+                var cfg = CopyConfig.Load(_folder, out msg);
+                if (!await DetectAsync((uint)cfg.TimeoutSeconds))
+                {
+                    StatusText.Text = "No disc ready to scan (see log).";
+                    return;
+                }
+                display.RequestActive();
+                displayActive = true;
+                _cts = new CancellationTokenSource();
+                SetBusy(true, true);
+                StatusText.Text = "Scanning (reads ~90 spots once each, writes nothing)... B cancels.";
+                var progress = new Progress<string>(s => ProgressText.Text = s);
+                var scan = new DiscScan(_drive, _probe, _log, (uint)cfg.TimeoutSeconds);
+                var token = _cts.Token;
+                string summary = await Task.Run(() => scan.RunAsync(progress, token));
+                StatusText.Text = summary;
+            }
+            catch (OperationCanceledException)
+            {
+                StatusText.Text = "Scan cancelled.";
+            }
+            catch (Exception ex)
+            {
+                _log.Info("ERROR while scanning: " + ex);
+                StatusText.Text = "Error: " + ex.Message;
+            }
+            finally
+            {
+                if (displayActive) display.RequestRelease();
+                if (_cts != null) { _cts.Dispose(); _cts = null; }
+                SetBusy(false, false);
+                ScanButton.Focus(FocusState.Programmatic);
+            }
         }
 
         private void CancelButton_Click(object sender, RoutedEventArgs e)
