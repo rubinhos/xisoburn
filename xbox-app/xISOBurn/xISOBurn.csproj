@@ -66,11 +66,10 @@
       <DependentUpon>MainPage.xaml</DependentUpon>
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Core\BadSectorMap.cs" />
     <Compile Include="Core\CopyConfig.cs" />
-    <Compile Include="Core\CopyJob.cs" />
     <Compile Include="Core\DiscProbe.cs" />
-    <Compile Include="Core\SectorReader.cs" />
+    <Compile Include="Core\RescueJob.cs" />
+    <Compile Include="Core\SectorStateMap.cs" />
     <Compile Include="Scsi\OpticalDrive.cs" />
     <Compile Include="Scsi\ScsiCommands.cs" />
     <Compile Include="Scsi\ScsiResult.cs" />

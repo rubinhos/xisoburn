@@ -1,45 +1,96 @@
-# Milestone 2: full read with error handling (local file)
+# Milestone 2: multi-pass, resumable rescue (local file)
 
-The app reads the whole disc, retrying first per block and then per sector. Sectors that won't read
-become zeros and are recorded in a map. The result goes to the app's **LocalState**, on the Xbox
-internal storage. There's no network yet; that comes in milestone 3.
+The app reads the disc in several passes, in the style of GNU `ddrescue`. It copies everything that
+reads easily first and then returns to the damaged areas. All progress is saved, so a run can be
+paused and resumed at any time, even after the app is closed. The image goes to the app's
+**LocalState**, on the Xbox internal storage. There's no network yet; that comes in milestone 3.
 
-## How reading works
+## Why multi-pass (results of the first full read)
 
-1. **Disc size:** taken from the DVD structure (OTP calculation) and checked against the ISO9660
-   volume. The Xbox drive's READ CAPACITY gives a wrong value for an OTP DVD-9 (see
-   [spike.md](spike.md)).
-2. **Reads in blocks** of `SectorsPerRead` sectors (default 32 = 64 KiB) with READ(10).
-3. If a block fails, it is read again **`BlockRetries`** times (default 5).
-4. If it keeps failing, reading switches to **sector by sector**, with 1 + **`SectorRetries`**
-   attempts each (default 5).
-5. A sector that won't read is **zero-filled** and recorded in the map. The copy **never stops**
-   because of a bad sector. It only stops if the disc leaves the drive (`02/3A`), if you cancel, or
-   if writing fails.
-6. **SHA-256** is computed while reading, over exactly the bytes written (zeros included).
-7. When a failure comes back without sense data, the app sends REQUEST SENSE to try to find the cause.
+The first full read of the test DVD (build 0.1.5.0, one pass with 5 block retries and 5 sector retries) showed:
+
+- **LBA 0 to 2,151,871 (64.9%) read without a single error**, at 2.9–5.9 MiB/s.
+- From **LBA 2,151,872** (in layer 1, ~270,000 sectors after the layer change) there is a damaged
+  area with a regular pattern: **16 sectors fail, 48 read fine, repeating every 64 sectors**.
+  - 16 sectors is exactly one DVD **ECC block**.
+  - ~64 sectors is roughly **one revolution** of the disc at that radius.
+  - So the same spot fails on every revolution: a **radial scratch or defect** at a fixed angle.
+- Each failing read takes **~6 s** and returns `05/20/00 INVALID COMMAND OPERATION CODE`. This is
+  the Xbox drive firmware's odd way of reporting a read failure, since the same command works on
+  other sectors. It is treated as an ordinary read failure.
+- Retries recover very little: one sector on attempt 6, another on attempt 2.
+- With immediate retries every ECC block cost ~100 commands (~10 minutes per revolution). In 1h26 the
+  read advanced only ~460 sectors.
+
+## How the rescue works
+
+| Pass | What it does | Status after |
+|------|--------------|--------------|
+| **1 - fast copy** | Reads in blocks of `SectorsPerRead`. A failing block is split into 16-sector ECC blocks, each read **once**. A failing ECC block becomes *pending* and reading moves on. For 2048 sectors after an error it reads ECC-block-sized pieces, so one bad block doesn't take the good ones down with it. Where errors are dense (4 failures within 4096 sectors) it **jumps ahead** 4096 sectors, doubling on each consecutive jump (up to 262,144), and leaves the jumped area *not tried*. | `+` ok, `*` pending, `?` skipped |
+| **1b - fill** | Reads the areas skipped by pass 1, with the same rules but no jumping. | `+` / `*` |
+| **2 - scrape** | Reads every *pending* sector once, one at a time, at `RetryReadSpeedKBps` (slower). | `+` / `-` bad |
+| **3+ - retry** | `RetryPasses` rounds over the *bad* sectors, one attempt per sector per round. | `+` / `-` |
+
+On the damaged area of the test DVD, pass 1 costs about **6 s per revolution** instead of ~10 minutes.
+Combined with the jumps, the readable part of the disc is secured first.
+
+- **Pause and resume:** **B** (or *Cancel*) pauses at the end of the current command. **Rescue /
+  resume** continues from where it stopped, also after the app was closed or killed. The map is
+  saved every 30 s and at the end of every pass.
+- **Hash:** once nothing is left to try (no `?`/`*` and the retry passes are done), the app computes
+  the **SHA-256 of the image file** and writes `VOLUME.sha256`. It can't be computed while reading,
+  because the passes write the data out of order.
+
+### Experimental drive settings (only the console can tell whether they help)
+
+- **`RetryReadSpeedKBps`** (default 1385 = DVD 1x): before the scrape and retry passes the app sends
+  SET CD SPEED to slow the drive down, which often recovers scratched sectors. It returns to maximum
+  speed at the end. The log line "SET CD SPEED ..." shows whether the drive accepted it.
+- **`DriveReadRetryCount`** (default -1 = don't touch): the drive's internal retry count (MODE page
+  01h) used during pass 1. Lowering it (e.g. `0` or `1`) may make each failing read give up in much
+  less than 6 s. The change is volatile and is restored at the end of every run. The log always shows
+  the drive's current value ("Drive error recovery page: ... read retry count N"), even when it isn't changed.
 
 ## Output files (LocalState)
 
 | File | Contents |
 |------|----------|
-| `ACQUARIA.iso` | Raw image, 2048 bytes per sector (only when `WriteImage` = true) |
-| `ACQUARIA.map` | Sectors **not read** (zero-filled), as `start-end (count) error` ranges, plus the SHA-256 |
-| `ACQUARIA.sha256` | The hash in `sha256sum` format (only when the copy completes) |
-| `xisoburn-YYYYMMDD-HHMMSS.log` | Session log: every failed attempt with its sense data, plus progress every 5% |
-| `config.json` | Settings (created on first launch) |
+| `ACQUARIA.iso` | Raw image, 2048 bytes per sector, full disc size. Only sectors read OK are written; everything else is zeros. |
+| `ACQUARIA.map` | Rescue state: every sector of the disc as `start count status [last error]` ranges (see below). This file is what makes resuming possible. |
+| `ACQUARIA.sha256` | SHA-256 of the image in `sha256sum` format, once nothing is left to try. |
+| `xisoburn-YYYYMMDD-HHMMSS.log` | Session log: every failed ECC block in pass 1, every recovered sector, the jumps, progress every 5% of each pass. |
+| `config.json` | Settings. |
 
-A partial copy (`StartSector`/`SectorLimit`) gets the suffix `_lbaSTART-END` in its name. If the
-copy is cancelled, the image is cut where it stopped and the `.map` says "INTERRUPTED".
+### `.map` format
+
+```
+# xISOBurn rescue map v1
+# volume: ACQUARIA
+# total_sectors: 3317799
+# image: ACQUARIA.iso
+# retry_passes_done: 0
+# summary: ok 3,301,000 (99.494%) | not tried 0 | pending 0 | bad 16,799
+# status: + read OK | ? not tried yet | * failed once, pending retry | - unreadable so far (zeros in the image)
+# start count status [last error]
+0 2151872 +
+2151872 9 -  05/20/00 INVALID COMMAND OPERATION CODE
+2151881 1 +
+...
+```
+
+The ranges cover the whole disc in order (LBA = absolute sector number, 2048 bytes each). Every
+sector marked `-`, `*` or `?` is zeros in the image.
 
 ## config.json
 
 ```json
 {
   "SectorsPerRead": 32,
-  "BlockRetries": 5,
-  "SectorRetries": 5,
   "TimeoutSeconds": 20,
+  "SkipOnErrors": true,
+  "RetryPasses": 2,
+  "RetryReadSpeedKBps": 1385,
+  "DriveReadRetryCount": -1,
   "StartSector": 0,
   "SectorLimit": 0,
   "WriteImage": true,
@@ -47,36 +98,41 @@ copy is cancelled, the image is cut where it stopped and the `.map` says "INTERR
 }
 ```
 
-- `SectorsPerRead`: 1 to 64 (the spike confirmed up to 64).
-- `TimeoutSeconds`: 5 to 120, per command. A bad sector can take several seconds per attempt. Worst
-  case for a 32-sector block where every sector is bad: 6 + 32 × 6 = 198 commands.
-- `SectorLimit`: 0 means up to the end. Use it to test a range, for example `200000` (about 390 MiB).
-- `WriteImage`: `false` reads the whole disc and builds the map and hash **without writing the image**.
-  Use it to find out whether the Xbox drive can read the whole disc before spending 6.3 GiB of storage.
-- `OutputName`: file name without extension; empty uses the volume label.
+| Key | Meaning |
+|-----|---------|
+| `SectorsPerRead` | Sectors per read in good areas, 1–64. |
+| `TimeoutSeconds` | Limit per command, 5–120. Failing reads took ~6 s on the Xbox drive. |
+| `SkipOnErrors` | Pass 1 jumps over dense error areas (filled later by pass 1b). |
+| `RetryPasses` | Rounds over the bad sectors after the scrape. To keep trying later, raise it and run again. |
+| `RetryReadSpeedKBps` | Drive speed for scrape/retry, in kB/s; 0 = don't change. |
+| `DriveReadRetryCount` | Drive-internal retries during pass 1; -1 = don't change. Experimental. |
+| `StartSector`, `SectorLimit` | Work range (for tests). The image and the map always cover the whole disc. |
+| `WriteImage` | `false` = build the map without writing the image. **Don't switch modes halfway**: a map built with `false` marks sectors as read without their data. To restart, delete the `.iso` and `.map`. |
+| `OutputName` | File name without extension; empty = volume label. |
 
-To edit it without a keyboard on the console, download `config.json` from the Device Portal, edit it
-on the PC and upload it back (see [install.md](install.md), section 5). The file is re-read before
-every copy.
+The app rewrites `config.json` after loading it, so the file always lists every current key. Old
+keys from previous versions (`BlockRetries`, `SectorRetries`) are dropped. Edit it through the
+Device Portal (see [install.md](install.md), section 5).
 
-## Suggested test plan
+## Test plan
 
-1. **Install the new version.** Remove the old one first if the Device Portal complains about the signature.
-2. Open the app and choose **Detect disc**. The "Disc" panel should show DVD-ROM, 2 layers (OTP),
-   **3,317,799 sectors (6.33 GiB)**, volume ACQUARIA, and the layer change at LBA 1,881,392.
-3. **Short test:** set `SectorLimit: 50000` and choose **Copy to LocalState**. Check that the speed
-   and remaining time make sense. Try **B** to cancel partway through.
-4. **Full read without writing** (`SectorLimit: 0`, `WriteImage: false`). This is the main test: it
-   shows whether the Xbox drive reads the sectors the PC drive fails on. Share the `.map` and the log.
-5. If step 4 goes well, run the **full copy with writing** (`WriteImage: true`). The app reserves
-   6.3 GiB up front; if there isn't enough space it fails right at the start, with the error in the log.
+1. **Install the new version** (remove the previous one first). You can delete the old files in
+   LocalState (`*.iso`, `*.map`, `*.bin`, old logs). `config.json` can stay; it is updated automatically.
+2. **Optional, to test `DriveReadRetryCount`:** set `"DriveReadRetryCount": 0`. In the log, check the
+   "Drive error recovery page" and "MODE SELECT" lines, and whether failing reads now take less than 6 s.
+3. Choose **Rescue / resume** with the defaults (`WriteImage: true`). Pass 1 should cross the good
+   part at full speed and jump over the damaged area.
+4. Leave it running; you can pause with **B** and resume whenever you like. Expected order: pass 1
+   to the end of the disc, then pass 1b in the damaged area, then the scrape and the retries.
+5. Share the log and the `.map`: how many sectors are left bad, whether the slower speed recovered
+   any, and how long each phase took.
 
 ### Things to check on the console
 
-- The drive's **sustained speed** (the spike didn't measure it properly).
-- **How long** each bad sector takes, and whether retries recover any (the log says "read on attempt N").
-- Whether errors arrive with sense data (`03/11/00`...) or as a "short response", and whether REQUEST SENSE helps.
-- **Start of layer 1** (LBA 1,881,392): in the spike, the first 16 sectors there came back zeroed.
-  In the full read, check whether the log or the map shows anything unusual in that region.
-- **Space:** whether LocalState accepts a 6.3 GiB file on internal storage.
-- **Suspension:** what happens if the console dims the screen or you press the Xbox button during a copy.
+- Whether LocalState accepts the 6.3 GiB image (it is reserved at the start; if there's no space,
+  the run fails immediately with the error in the log).
+- Whether SET CD SPEED and MODE SELECT are accepted, and whether they change the time per failing read.
+- Pause/resume: close the app halfway and resume; the "Resuming from ACQUARIA.map" line should
+  show the earlier progress.
+- Cleaning the disc (straight lines from the centre outwards, soft microfiber) before the scrape pass
+  can recover more than any setting.

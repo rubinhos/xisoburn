@@ -47,6 +47,7 @@ namespace xISOBurn.Scsi
         /// <summary>Header = structure + sense; the data starts right after it (as in XBSX2).</summary>
         public const int HeaderSize = SptSize + SenseSize; // 88
 
+        private const byte SCSI_IOCTL_DATA_OUT = 0;
         private const byte SCSI_IOCTL_DATA_IN = 1;
         private const byte SCSI_IOCTL_DATA_UNSPECIFIED = 2;
 
@@ -112,7 +113,7 @@ namespace xISOBurn.Scsi
             await _gate.WaitAsync();
             try
             {
-                var result = await SendCoreAsync(cdb, dataLength, dest, destOffset, timeoutSeconds);
+                var result = await SendCoreAsync(cdb, dataLength, dest, destOffset, timeoutSeconds, null);
 
                 // In the spike, reads past the end of the disc came back as a "short response (3 bytes)"
                 // with no sense data. In that case we ask for the sense explicitly (REQUEST SENSE, 0x03).
@@ -121,7 +122,7 @@ namespace xISOBurn.Scsi
                 if (!result.Success && result.Sense == null && cdb[0] != 0x03)
                 {
                     var sense = new byte[18];
-                    var rs = await SendCoreAsync(ScsiCommands.RequestSense(18), 18, sense, 0, 10);
+                    var rs = await SendCoreAsync(ScsiCommands.RequestSense(18), 18, sense, 0, 10, null);
                     if (rs.Success && rs.DataLength >= 8)
                     {
                         var parsed = SenseInfo.Parse(sense, rs.DataLength);
@@ -140,7 +141,26 @@ namespace xISOBurn.Scsi
             }
         }
 
-        private async Task<ScsiResult> SendCoreAsync(byte[] cdb, int dataLength, byte[] dest, int destOffset, uint timeoutSeconds)
+        /// <summary>
+        /// Sends a CDB that carries data TO the drive (DATA OUT), e.g. MODE SELECT. With the buffered
+        /// pass-through the outgoing data sits in the input buffer right after the header.
+        /// </summary>
+        public async Task<ScsiResult> SendOutAsync(byte[] cdb, byte[] data, uint timeoutSeconds)
+        {
+            if (cdb.Length == 0 || cdb.Length > 16) throw new ArgumentException("A CDB must be 1..16 bytes");
+            if (data == null || data.Length == 0 || data.Length > MaxTransferBytes) throw new ArgumentOutOfRangeException("data");
+            await _gate.WaitAsync();
+            try
+            {
+                return await SendCoreAsync(cdb, 0, null, 0, timeoutSeconds, data);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        private async Task<ScsiResult> SendCoreAsync(byte[] cdb, int dataLength, byte[] dest, int destOffset, uint timeoutSeconds, byte[] outData)
         {
             var sw = Stopwatch.StartNew();
             var result = new ScsiResult();
@@ -151,7 +171,16 @@ namespace xISOBurn.Scsi
                 Bytes.PutLE16(_in, OffLength, SptSize);
                 _in[OffCdbLength] = (byte)cdb.Length;
                 _in[OffSenseLength] = SenseSize;
-                _in[OffDataIn] = dataLength > 0 ? SCSI_IOCTL_DATA_IN : SCSI_IOCTL_DATA_UNSPECIFIED;
+                if (outData != null)
+                {
+                    _in[OffDataIn] = SCSI_IOCTL_DATA_OUT;
+                    dataLength = outData.Length;
+                    Buffer.BlockCopy(outData, 0, _in, HeaderSize, outData.Length);
+                }
+                else
+                {
+                    _in[OffDataIn] = dataLength > 0 ? SCSI_IOCTL_DATA_IN : SCSI_IOCTL_DATA_UNSPECIFIED;
+                }
                 Bytes.PutLE32(_in, OffTransferLength, (uint)dataLength);
                 Bytes.PutLE32(_in, OffTimeout, timeoutSeconds);
                 Bytes.PutLE64(_in, OffDataOffset, HeaderSize);
@@ -185,7 +214,7 @@ namespace xISOBurn.Scsi
                     result.Sense = SenseInfo.Parse(sense, senseLen);
                 }
 
-                if (result.ScsiStatus == 0 && dataLength > 0)
+                if (result.ScsiStatus == 0 && dataLength > 0 && outData == null)
                 {
                     uint transferred = Bytes.LE32(_out, OffTransferLength);
                     long available = (long)received - HeaderSize;

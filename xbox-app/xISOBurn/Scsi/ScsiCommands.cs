@@ -91,6 +91,45 @@ namespace xISOBurn.Scsi
             return cdb;
         }
 
+        /// <summary>
+        /// SET CD SPEED (0xBB): read speed in kB/s (1000 bytes/s), 0xFFFF = maximum. MMC defines it for
+        /// CDs, but most drives also apply it to DVDs (DVD 1x = 1385 kB/s). XBSX2 sends this same CDB.
+        /// Reading a scratched disc more slowly often recovers sectors that fail at full speed.
+        /// The setting is volatile: the drive returns to its default after a reset or disc change.
+        /// </summary>
+        public static byte[] SetCdSpeed(int readKBps)
+        {
+            var cdb = new byte[12];
+            cdb[0] = 0xBB;
+            Bytes.PutBE16(cdb, 2, readKBps);
+            Bytes.PutBE16(cdb, 4, 0xFFFF); // write speed: leave at maximum
+            return cdb;
+        }
+
+        /// <summary>MODE SENSE(10) (0x5A) of one page, current values, without block descriptors (DBD=1).</summary>
+        public static byte[] ModeSense10(byte page, int allocationLength)
+        {
+            var cdb = new byte[10];
+            cdb[0] = 0x5A;
+            cdb[1] = 0x08;              // DBD
+            cdb[2] = (byte)(page & 0x3F); // PC = 00 (current values)
+            Bytes.PutBE16(cdb, 7, allocationLength);
+            return cdb;
+        }
+
+        /// <summary>
+        /// MODE SELECT(10) (0x55) with PF=1, SP=0: the change is NOT saved in the drive (volatile), so a
+        /// power cycle always restores the original behaviour.
+        /// </summary>
+        public static byte[] ModeSelect10(int parameterListLength)
+        {
+            var cdb = new byte[10];
+            cdb[0] = 0x55;
+            cdb[1] = 0x10;              // PF
+            Bytes.PutBE16(cdb, 7, parameterListLength);
+            return cdb;
+        }
+
         /// <summary>READ TOC/PMA/ATIP (0x43), format 0 (TOC), LBA addresses. CDs only.</summary>
         public static byte[] ReadToc(int allocationLength)
         {

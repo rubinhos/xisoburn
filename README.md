@@ -12,9 +12,10 @@ It's useful when your PC's DVD drive fails on a disc (SCSI errors such as
 `MEDIUM ERROR / UNRECOVERED READ ERROR`): the Xbox drive becomes a second reader. The destination
 is the PC, over the network, because files on USB storage are limited to about 2 GB in Developer Mode.
 
-> **Current status: milestone 2.** The app copies the whole disc to a local file on the Xbox
-> (LocalState), with per-block and per-sector retries, a map of unreadable sectors and a SHA-256.
-> There's no network yet.
+> **Current status: milestone 2.** The app rescues the disc into a local file on the Xbox
+> (LocalState). It works in multiple resumable passes in the style of `ddrescue`: the easy data first,
+> then the damaged areas, with a map of every sector and a SHA-256 of the final image. There's no
+> network yet.
 
 ## Documentation
 
@@ -22,7 +23,7 @@ is the PC, over the network, because files on USB storage are limited to about 2
 |----------|----------|
 | [docs/install.md](docs/install.md) | Build (GitHub Actions), Device Portal access, installing the app, downloading logs |
 | [docs/spike.md](docs/spike.md) | Milestone 1: the feasibility test and its results on a real Series X |
-| [docs/milestone-2.md](docs/milestone-2.md) | Milestone 2: how the full read works, `config.json`, test plan |
+| [docs/milestone-2.md](docs/milestone-2.md) | Milestone 2: results of the first full read, the multi-pass rescue, `.map` format, `config.json`, test plan |
 
 ## Repository layout
 
@@ -30,7 +31,7 @@ is the PC, over the network, because files on USB storage are limited to about 2
 |--------|----------|
 | `xbox-app/` | UWP project in C# (`xISOBurn.sln`) |
 | `xbox-app/xISOBurn/Scsi/` | Drive access: `Windows.Devices.Custom` + SCSI pass-through |
-| `xbox-app/xISOBurn/Core/` | Disc detection, reads with retries, error map, copy |
+| `xbox-app/xISOBurn/Core/` | Disc detection, multi-pass rescue, sector state map, settings |
 | `xbox-app/xISOBurn/Spike/` | The feasibility test |
 | `xbox-app/tools/make-assets.ps1` | Builds the package images from `designer.png` |
 | `docs/` | Notes and test results |

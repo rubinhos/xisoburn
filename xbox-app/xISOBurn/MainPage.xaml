@@ -19,14 +19,14 @@
         <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="24">
             <Image Source="Assets/Banner.png" Height="110" Stretch="Uniform" HorizontalAlignment="Left"
                    AutomationProperties.Name="xISOBurn"/>
-            <TextBlock Text="Milestone 2 — copy the disc to a local file (LocalState), no network yet"
+            <TextBlock Text="Milestone 2 — multi-pass, resumable rescue to a local file (LocalState)"
                        FontSize="18" Opacity="0.7" VerticalAlignment="Center"/>
         </StackPanel>
 
         <!-- Controller-only navigation: D-pad between buttons, A activates, B cancels a copy. -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12">
             <Button x:Name="DetectButton" Content="Detect disc" Click="DetectButton_Click" FontSize="20" Padding="20,10"/>
-            <Button x:Name="CopyButton" Content="Copy to LocalState" Click="CopyButton_Click" FontSize="20" Padding="20,10"/>
+            <Button x:Name="CopyButton" Content="Rescue / resume" Click="CopyButton_Click" FontSize="20" Padding="20,10"/>
             <Button x:Name="CancelButton" Content="Cancel (B)" Click="CancelButton_Click" FontSize="20" Padding="20,10" IsEnabled="False"/>
             <Button x:Name="SpikeButton" Content="Feasibility test" Click="SpikeButton_Click" FontSize="20" Padding="20,10"/>
         </StackPanel>

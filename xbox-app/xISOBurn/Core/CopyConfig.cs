@@ -7,33 +7,48 @@ using Windows.Data.Json;
 namespace xISOBurn.Core
 {
     /// <summary>
-    /// Copy settings, stored in LocalState\config.json. If the file does not exist it is created with
-    /// the defaults. To edit it without a keyboard on the console, download it from the Device Portal
+    /// Rescue settings, stored in LocalState\config.json. If the file does not exist it is created with
+    /// the defaults; after every successful load it is rewritten with all current keys (unknown or
+    /// obsolete keys are dropped), so the file always documents what the app actually uses.
+    /// To edit it without a keyboard on the console, download it from the Device Portal
     /// (File explorer > LocalAppData > xISOBurn_... > LocalState), edit it on the PC and upload it back.
-    /// The file is read again before every copy.
+    /// The file is read again before every run.
     /// </summary>
     internal sealed class CopyConfig
     {
         public const string FileName = "config.json";
+        public const int MaxSectorsPerRead = 64;
 
-        /// <summary>Sectors per READ(10). The spike showed 16..64 work on the Series X drive.</summary>
+        /// <summary>Sectors per READ(10) in good areas. The spike showed 16..64 work on the Series X drive.</summary>
         public int SectorsPerRead = 32;
-        /// <summary>Extra attempts for the whole block after the first failure.</summary>
-        public int BlockRetries = 5;
-        /// <summary>Extra attempts for each sector during the sector-by-sector pass.</summary>
-        public int SectorRetries = 5;
-        /// <summary>Maximum time per SCSI command (seconds). A bad sector can take several seconds.</summary>
+        /// <summary>Maximum time per SCSI command (seconds). On the Xbox drive a failing read took ~6 s.</summary>
         public int TimeoutSeconds = 20;
-        /// <summary>First sector to copy (for testing a range).</summary>
+        /// <summary>
+        /// Pass 1: when errors are dense, jump ahead and come back later ("fill" pass), so the easy data
+        /// is secured first. false = read strictly in order.
+        /// </summary>
+        public bool SkipOnErrors = true;
+        /// <summary>Extra passes over sectors that are still bad after the scrape pass (1 attempt per sector per pass).</summary>
+        public int RetryPasses = 2;
+        /// <summary>
+        /// Drive read speed (kB/s) for the scrape and retry passes; 0 = do not change. 1385 = DVD 1x.
+        /// Reading slowly often recovers scratched sectors. Experimental: the drive may ignore it.
+        /// </summary>
+        public int RetryReadSpeedKBps = 1385;
+        /// <summary>
+        /// Drive-internal read retry count (MODE page 01h, byte 3) during pass 1; -1 = do not change.
+        /// Lower = each failing read gives up sooner (it took ~6 s with the drive defaults).
+        /// Experimental and volatile; the original value is restored at the end of every run.
+        /// </summary>
+        public int DriveReadRetryCount = -1;
+        /// <summary>First sector of the work range (for testing a range). The image always covers the whole disc.</summary>
         public long StartSector = 0;
-        /// <summary>Maximum number of sectors (0 = up to the end of the disc).</summary>
+        /// <summary>Number of sectors in the work range (0 = up to the end of the disc).</summary>
         public long SectorLimit = 0;
-        /// <summary>false = only read, hash and build the map, without writing the image (drive test).</summary>
+        /// <summary>false = only read and build the map, without writing the image (drive test).</summary>
         public bool WriteImage = true;
         /// <summary>File name without extension. Empty = the disc's volume label.</summary>
         public string OutputName = "";
-
-        public const int MaxSectorsPerRead = 64;
 
         public static CopyConfig Load(string folder, out string message)
         {
@@ -56,9 +71,11 @@ namespace xISOBurn.Core
             try
             {
                 cfg.SectorsPerRead = (int)o.GetNamedNumber("SectorsPerRead", cfg.SectorsPerRead);
-                cfg.BlockRetries = (int)o.GetNamedNumber("BlockRetries", cfg.BlockRetries);
-                cfg.SectorRetries = (int)o.GetNamedNumber("SectorRetries", cfg.SectorRetries);
                 cfg.TimeoutSeconds = (int)o.GetNamedNumber("TimeoutSeconds", cfg.TimeoutSeconds);
+                cfg.SkipOnErrors = o.GetNamedBoolean("SkipOnErrors", cfg.SkipOnErrors);
+                cfg.RetryPasses = (int)o.GetNamedNumber("RetryPasses", cfg.RetryPasses);
+                cfg.RetryReadSpeedKBps = (int)o.GetNamedNumber("RetryReadSpeedKBps", cfg.RetryReadSpeedKBps);
+                cfg.DriveReadRetryCount = (int)o.GetNamedNumber("DriveReadRetryCount", cfg.DriveReadRetryCount);
                 cfg.StartSector = (long)o.GetNamedNumber("StartSector", cfg.StartSector);
                 cfg.SectorLimit = (long)o.GetNamedNumber("SectorLimit", cfg.SectorLimit);
                 cfg.WriteImage = o.GetNamedBoolean("WriteImage", cfg.WriteImage);
@@ -67,10 +84,12 @@ namespace xISOBurn.Core
             catch (Exception ex)
             {
                 // GetNamed* throws if a value has the wrong type (e.g. a number in quotes).
-                message = "config.json has a value of the wrong type (" + ex.Message + "); using the defaults.";
+                message = "config.json has a value of the wrong type (" + ex.Message + "); using the defaults. The file was not changed.";
                 return new CopyConfig();
             }
-            message = cfg.Clamp() ? "config.json loaded (some out-of-range values were adjusted)." : "config.json loaded.";
+            bool adjusted = cfg.Clamp();
+            try { cfg.Save(folder); } catch (Exception) { /* keep going with the values in memory */ }
+            message = adjusted ? "config.json loaded (some out-of-range values were adjusted)." : "config.json loaded.";
             return cfg;
         }
 
@@ -78,27 +97,33 @@ namespace xISOBurn.Core
         private bool Clamp()
         {
             int spr = Math.Max(1, Math.Min(MaxSectorsPerRead, SectorsPerRead));
-            int br = Math.Max(0, Math.Min(50, BlockRetries));
-            int sr = Math.Max(0, Math.Min(50, SectorRetries));
             int to = Math.Max(5, Math.Min(120, TimeoutSeconds));
+            int rp = Math.Max(0, Math.Min(100, RetryPasses));
+            int rs = RetryReadSpeedKBps <= 0 ? 0 : Math.Max(176, Math.Min(0xFFFF, RetryReadSpeedKBps));
+            int rc = DriveReadRetryCount < 0 ? -1 : Math.Min(255, DriveReadRetryCount);
             long ss = Math.Max(0, StartSector);
             long sl = Math.Max(0, SectorLimit);
-            bool changed = spr != SectorsPerRead || br != BlockRetries || sr != SectorRetries || to != TimeoutSeconds || ss != StartSector || sl != SectorLimit;
-            SectorsPerRead = spr; BlockRetries = br; SectorRetries = sr; TimeoutSeconds = to; StartSector = ss; SectorLimit = sl;
+            bool changed = spr != SectorsPerRead || to != TimeoutSeconds || rp != RetryPasses || rs != RetryReadSpeedKBps ||
+                           rc != DriveReadRetryCount || ss != StartSector || sl != SectorLimit;
+            SectorsPerRead = spr; TimeoutSeconds = to; RetryPasses = rp; RetryReadSpeedKBps = rs;
+            DriveReadRetryCount = rc; StartSector = ss; SectorLimit = sl;
             return changed;
         }
 
         public void Save(string folder)
         {
             // Written by hand so it stays readable and keeps a fixed order.
+            var inv = CultureInfo.InvariantCulture;
             var sb = new StringBuilder();
             sb.Append("{\n");
-            sb.Append("  \"SectorsPerRead\": ").Append(SectorsPerRead).Append(",\n");
-            sb.Append("  \"BlockRetries\": ").Append(BlockRetries).Append(",\n");
-            sb.Append("  \"SectorRetries\": ").Append(SectorRetries).Append(",\n");
-            sb.Append("  \"TimeoutSeconds\": ").Append(TimeoutSeconds).Append(",\n");
-            sb.Append("  \"StartSector\": ").Append(StartSector.ToString(CultureInfo.InvariantCulture)).Append(",\n");
-            sb.Append("  \"SectorLimit\": ").Append(SectorLimit.ToString(CultureInfo.InvariantCulture)).Append(",\n");
+            sb.Append("  \"SectorsPerRead\": ").Append(SectorsPerRead.ToString(inv)).Append(",\n");
+            sb.Append("  \"TimeoutSeconds\": ").Append(TimeoutSeconds.ToString(inv)).Append(",\n");
+            sb.Append("  \"SkipOnErrors\": ").Append(SkipOnErrors ? "true" : "false").Append(",\n");
+            sb.Append("  \"RetryPasses\": ").Append(RetryPasses.ToString(inv)).Append(",\n");
+            sb.Append("  \"RetryReadSpeedKBps\": ").Append(RetryReadSpeedKBps.ToString(inv)).Append(",\n");
+            sb.Append("  \"DriveReadRetryCount\": ").Append(DriveReadRetryCount.ToString(inv)).Append(",\n");
+            sb.Append("  \"StartSector\": ").Append(StartSector.ToString(inv)).Append(",\n");
+            sb.Append("  \"SectorLimit\": ").Append(SectorLimit.ToString(inv)).Append(",\n");
             sb.Append("  \"WriteImage\": ").Append(WriteImage ? "true" : "false").Append(",\n");
             sb.Append("  \"OutputName\": ").Append(JsonValue.CreateStringValue(OutputName ?? "").Stringify()).Append("\n");
             sb.Append("}\n");
@@ -107,9 +132,11 @@ namespace xISOBurn.Core
 
         public string Describe()
         {
-            return "block " + SectorsPerRead + " sectors | retries: block " + BlockRetries + ", sector " + SectorRetries +
-                   " | timeout " + TimeoutSeconds + " s | start " + StartSector +
-                   " | limit " + (SectorLimit > 0 ? SectorLimit.ToString() : "end of disc") +
+            return "block " + SectorsPerRead + " sectors | timeout " + TimeoutSeconds + " s | skip on errors: " + (SkipOnErrors ? "yes" : "no") +
+                   " | retry passes " + RetryPasses +
+                   " | retry speed " + (RetryReadSpeedKBps > 0 ? RetryReadSpeedKBps + " kB/s" : "unchanged") +
+                   " | drive retries " + (DriveReadRetryCount >= 0 ? DriveReadRetryCount.ToString() : "unchanged") +
+                   " | range " + StartSector + "+" + (SectorLimit > 0 ? SectorLimit.ToString() : "end") +
                    " | write image: " + (WriteImage ? "yes" : "no");
         }
     }

@@ -129,7 +129,7 @@ namespace xISOBurn
             try
             {
                 bool ok = await DetectAsync(20);
-                StatusText.Text = ok ? "Disc detected. Choose \"Copy to LocalState\"." : "No disc detected (see log).";
+                StatusText.Text = ok ? "Disc detected. Choose \"Rescue / resume\"." : "No disc detected (see log).";
             }
             catch (Exception ex)
             {
@@ -169,21 +169,25 @@ namespace xISOBurn
                 displayActive = true;
                 _cts = new CancellationTokenSource();
                 SetBusy(true, true);
-                StatusText.Text = "Copying... do not leave the app. B cancels.";
+                StatusText.Text = "Rescuing... do not leave the app. B pauses (progress is kept; run again to resume).";
                 Bar.Value = 0;
 
-                var progress = new Progress<CopyProgress>(UpdateProgress);
-                var job = new CopyJob(_drive, _probe, cfg, _log, _folder);
+                var progress = new Progress<RescueProgress>(UpdateProgress);
+                var job = new RescueJob(_drive, _probe, cfg, _log, _folder);
                 var token = _cts.Token;
                 var result = await Task.Run(() => job.RunAsync(progress, token));
 
-                if (result.Completed)
-                    StatusText.Text = "Done: " + result.BadSectors + " sector(s) unreadable. SHA-256 " + result.Sha256 +
-                                      (result.ImagePath != null ? " | " + result.ImagePath : "");
+                string counts = result.Ok.ToString("N0") + " ok, " + result.Bad.ToString("N0") + " bad, " +
+                                result.Pending.ToString("N0") + " pending, " + result.Untried.ToString("N0") + " not tried";
+                if (result.Finished)
+                    StatusText.Text = "Finished: " + counts + "." + (result.Sha256 != null ? " SHA-256 " + result.Sha256 : "") +
+                                      " Raise RetryPasses in config.json to keep trying the bad sectors.";
                 else if (result.Cancelled)
-                    StatusText.Text = "Cancelled. Partial map: " + result.MapPath;
+                    StatusText.Text = "Paused: " + counts + ". Choose \"Rescue / resume\" to continue.";
+                else if (result.Error != null)
+                    StatusText.Text = "Stopped: " + result.Error + " (" + counts + ")";
                 else
-                    StatusText.Text = "Stopped: " + result.Error;
+                    StatusText.Text = "Range done: " + counts + ".";
             }
             catch (Exception ex)
             {
@@ -199,15 +203,18 @@ namespace xISOBurn
             }
         }
 
-        private void UpdateProgress(CopyProgress p)
+        private void UpdateProgress(RescueProgress p)
         {
-            double pct = p.Total > 0 ? p.Done * 100.0 / p.Total : 0;
-            Bar.Value = pct;
+            // The bar shows the whole disc (sectors read OK); the text shows the current phase.
+            double okPct = p.Total > 0 ? p.Ok * 100.0 / p.Total : 0;
+            double phasePct = p.PhaseTotal > 0 ? p.PhaseDone * 100.0 / p.PhaseTotal : 100;
+            Bar.Value = okPct;
             ProgressText.Text =
-                p.Done.ToString("N0") + " / " + p.Total.ToString("N0") + " sectors (" + pct.ToString("0.0") + "%) | LBA " + p.CurrentLba.ToString("N0") + "\n" +
-                "Speed: " + (p.BytesPerSecond / 1048576.0).ToString("0.0") + " MiB/s | Elapsed: " + CopyJob.FormatTime(p.Elapsed) +
-                " | Remaining: " + (p.Remaining.HasValue ? CopyJob.FormatTime(p.Remaining.Value) : "-") + "\n" +
-                "Unreadable sectors (zero-filled): " + p.Bad.ToString("N0");
+                p.Phase + ": " + p.PhaseDone.ToString("N0") + " / " + p.PhaseTotal.ToString("N0") + " (" + phasePct.ToString("0.0") + "%) | LBA " + p.CurrentLba.ToString("N0") + "\n" +
+                "Speed: " + (p.BytesPerSecond / 1048576.0).ToString("0.00") + " MiB/s | Elapsed: " + RescueJob.FormatTime(p.Elapsed) +
+                " | Phase remaining: " + (p.Remaining.HasValue ? RescueJob.FormatTime(p.Remaining.Value) : "-") + "\n" +
+                "Disc: " + okPct.ToString("0.000") + "% read | bad " + p.Bad.ToString("N0") + " | pending " + p.Pending.ToString("N0") +
+                " | not tried " + p.Untried.ToString("N0");
         }
 
         private void CancelButton_Click(object sender, RoutedEventArgs e)
