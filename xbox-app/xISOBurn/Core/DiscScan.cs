@@ -60,9 +60,6 @@ namespace xISOBurn.Core
                 points.Add(Align(l0 - Block));
                 points.Add(Align(l0));
             }
-            // Around the damaged area found on the test DVD (harmless on other discs).
-            foreach (long p in new long[] { 2100000, 2140000, 2151952, 2152016, 2160000, 2200000 })
-                if (p < total) points.Add(Align(p));
 
             int ok = 0, fail = 0, driveStuck = 0, n = 0;
             long lastOk = -1, firstFail = -1;

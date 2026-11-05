@@ -77,7 +77,6 @@
     <Compile Include="Scsi\ScsiResult.cs" />
     <Compile Include="Scsi\SenseInfo.cs" />
     <Compile Include="Scsi\DiscInfo.cs" />
-    <Compile Include="Spike\SpikeRunner.cs" />
     <Compile Include="Util\Bytes.cs" />
     <Compile Include="Util\HexDump.cs" />
     <Compile Include="Util\Logger.cs" />

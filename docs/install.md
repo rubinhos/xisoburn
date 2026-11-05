@@ -73,6 +73,5 @@ In the Device Portal, open **File explorer** (left menu) â†’ **LocalAppData** â†
 | File | What it is |
 |------|------------|
 | `xisoburn-YYYYMMDD-HHMMSS.log` | Log of one app session (detection and copy) |
-| `spike-YYYYMMDD-HHMMSS.log` | Log of the feasibility test |
 | `config.json` | Copy settings (see [milestone-2.md](milestone-2.md)) |
 | `<VOLUME>.iso` / `.map` / `.sha256` | The copy, the map of unreadable sectors and the hash |

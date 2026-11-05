@@ -9,7 +9,6 @@ using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using xISOBurn.Core;
 using xISOBurn.Scsi;
-using xISOBurn.Spike;
 using xISOBurn.Util;
 
 namespace xISOBurn
@@ -33,6 +32,9 @@ namespace xISOBurn
         private DiscProbe _probe;
         private CancellationTokenSource _cts;
         private bool _busy;
+        /// <summary>Bad + pending sectors of the inserted disc according to its .map (enables "Retry failed").</summary>
+        private long _failedSectors;
+        private string _rescueLine = "";
 
         public MainPage()
         {
@@ -80,8 +82,8 @@ namespace xISOBurn
             _busy = busy;
             DetectButton.IsEnabled = !busy;
             CopyButton.IsEnabled = !busy;
+            RetryButton.IsEnabled = !busy && _failedSectors > 0;
             ScanButton.IsEnabled = !busy;
-            SpikeButton.IsEnabled = !busy;
             CancelButton.IsEnabled = copying;
             if (copying) CancelButton.Focus(FocusState.Programmatic);
         }
@@ -117,10 +119,60 @@ namespace xISOBurn
             if (!await EnsureDriveAsync()) return false;
             var drive = _drive;
             _probe = await Task.Run(() => DiscProbe.RunAsync(drive, timeout, _log));
-            DiscText.Text = string.Join("\n", _probe.Describe());
             if (!_probe.Ready && _probe.NotReadyReason.Contains("IOCTL"))
                 CloseDrive(); // the handle may have gone stale; reopen next time
+            await CheckPreviousRescueAsync();
             return _probe.Ready && _probe.TotalSectors > 0;
+        }
+
+        /// <summary>
+        /// Looks for a .map of an earlier rescue of this disc, so the screen can say how far it got and
+        /// "Retry failed" is only offered when there is something to retry.
+        /// </summary>
+        private async Task CheckPreviousRescueAsync()
+        {
+            _failedSectors = 0;
+            _rescueLine = "";
+            if (_probe != null && _probe.Ready && _probe.TotalSectors > 0)
+            {
+                string msg;
+                var cfg = CopyConfig.Load(_folder, out msg);
+                string path = System.IO.Path.Combine(_folder, RescueJob.BaseNameFor(cfg, _probe) + ".map");
+                long total = _probe.TotalSectors;
+                SectorStateMap map = null;
+                try
+                {
+                    if (System.IO.File.Exists(path))
+                        map = await Task.Run(() => { string reason; return SectorStateMap.Load(path, total, out reason); });
+                }
+                catch (Exception ex)
+                {
+                    _log.Info("Could not read the previous map: " + ex.Message);
+                }
+                if (map != null)
+                    SetRescueState(map.Count(SectorState.Ok), map.Count(SectorState.Bad), map.Count(SectorState.Pending),
+                                   map.Count(SectorState.Untried), total);
+            }
+            ShowDisc();
+        }
+
+        private void SetRescueState(long ok, long bad, long pending, long untried, long total)
+        {
+            _failedSectors = bad + pending;
+            _rescueLine = "Previous rescue: " + (ok * 100.0 / total).ToString("0.000") + "% read" +
+                          (_failedSectors > 0 ? ", " + _failedSectors.ToString("N0") + " failed sector(s)" : "") +
+                          (untried > 0 ? ", " + untried.ToString("N0") + " not tried" : "") +
+                          (untried == 0 && _failedSectors == 0 ? " (complete)" : "");
+            _log.Info(_rescueLine);
+            RetryButton.IsEnabled = !_busy && _failedSectors > 0;
+        }
+
+        private void ShowDisc()
+        {
+            if (_probe == null) return;
+            string text = string.Join("\n", _probe.Describe());
+            if (_rescueLine.Length > 0) text += "\n" + _rescueLine;
+            DiscText.Text = text;
         }
 
         private async void DetectButton_Click(object sender, RoutedEventArgs e)
@@ -145,6 +197,17 @@ namespace xISOBurn
         }
 
         private async void CopyButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RunRescueAsync(false, CopyButton);
+        }
+
+        /// <summary>One more retry pass over the sectors that failed (in addition to the configured passes).</summary>
+        private async void RetryButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RunRescueAsync(true, RetryButton);
+        }
+
+        private async Task RunRescueAsync(bool extraRetryPass, Button origin)
         {
             if (_busy) return;
             SetBusy(true, false);
@@ -174,15 +237,22 @@ namespace xISOBurn
                 Bar.Value = 0;
 
                 var progress = new Progress<RescueProgress>(UpdateProgress);
-                var job = new RescueJob(_drive, _probe, cfg, _log, _folder);
+                var job = new RescueJob(_drive, _probe, cfg, _log, _folder, extraRetryPass);
                 var token = _cts.Token;
                 var result = await Task.Run(() => job.RunAsync(progress, token));
 
+                SetRescueState(result.Ok, result.Bad, result.Pending, result.Untried, _probe.TotalSectors);
+                ShowDisc();
+
                 string counts = result.Ok.ToString("N0") + " ok, " + result.Bad.ToString("N0") + " bad, " +
                                 result.Pending.ToString("N0") + " pending, " + result.Untried.ToString("N0") + " not tried";
-                if (result.Finished)
+                if (extraRetryPass && !result.Cancelled && result.Error == null)
+                    StatusText.Text = "Retry done: recovered " + result.RecoveredThisRun.ToString("N0") + " of " +
+                                      result.RetriedThisRun.ToString("N0") + " sector(s); " + (result.Bad + result.Pending).ToString("N0") +
+                                      " still failed." + (result.Sha256 != null ? " SHA-256 " + result.Sha256 : "");
+                else if (result.Finished)
                     StatusText.Text = "Finished: " + counts + "." + (result.Sha256 != null ? " SHA-256 " + result.Sha256 : "") +
-                                      " Raise RetryPasses in config.json to keep trying the bad sectors.";
+                                      (result.Bad > 0 ? " \"Retry failed\" tries the bad sectors once more." : "");
                 else if (result.Cancelled)
                     StatusText.Text = "Paused: " + counts + ". Choose \"Rescue / resume\" to continue.";
                 else if (result.Error != null)
@@ -200,7 +270,7 @@ namespace xISOBurn
                 if (displayActive) display.RequestRelease();
                 if (_cts != null) { _cts.Dispose(); _cts = null; }
                 SetBusy(false, false);
-                CopyButton.Focus(FocusState.Programmatic);
+                origin.Focus(FocusState.Programmatic);
             }
         }
 
@@ -268,36 +338,6 @@ namespace xISOBurn
             {
                 _cts.Cancel();
                 StatusText.Text = "Cancelling... (finishing the current block)";
-            }
-        }
-
-        private async void SpikeButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (_busy) return;
-            SetBusy(true, false);
-            CloseDrive(); // the spike opens its own handle
-            _lines.Clear();
-            StatusText.Text = "Running the feasibility test... do not leave the app.";
-            var display = new DisplayRequest();
-            display.RequestActive();
-            Logger log = null;
-            try
-            {
-                log = new Logger(_folder, "spike", AddLine);
-                await new SpikeRunner(log, _folder).RunAsync();
-                StatusText.Text = "Test finished. Log: " + log.FilePath;
-            }
-            catch (Exception ex)
-            {
-                AddLine("ERROR: " + ex);
-                StatusText.Text = "Error: " + ex.Message;
-            }
-            finally
-            {
-                if (log != null) log.Dispose();
-                display.RequestRelease();
-                SetBusy(false, false);
-                SpikeButton.Focus(FocusState.Programmatic);
             }
         }
     }

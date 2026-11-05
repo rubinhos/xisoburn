@@ -32,7 +32,6 @@ is the PC, over the network, because files on USB storage are limited to about 2
 | `xbox-app/` | UWP project in C# (`xISOBurn.sln`) |
 | `xbox-app/xISOBurn/Scsi/` | Drive access: `Windows.Devices.Custom` + SCSI pass-through |
 | `xbox-app/xISOBurn/Core/` | Disc detection, multi-pass rescue, sector state map, settings |
-| `xbox-app/xISOBurn/Spike/` | The feasibility test |
 | `xbox-app/tools/make-assets.ps1` | Builds the package images from `designer.png` |
 | `docs/` | Notes and test results |
 | `.github/workflows/build.yml` | Build and packaging on GitHub Actions |

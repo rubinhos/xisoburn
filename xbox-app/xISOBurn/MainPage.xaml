@@ -32,8 +32,9 @@
             <Button x:Name="DetectButton" Content="Detect disc" Click="DetectButton_Click" FontSize="15" Padding="12,5"/>
             <Button x:Name="CopyButton" Content="Rescue / resume" Click="CopyButton_Click" FontSize="15" Padding="12,5"/>
             <Button x:Name="CancelButton" Content="Cancel (B)" Click="CancelButton_Click" FontSize="15" Padding="12,5" IsEnabled="False"/>
+            <!-- Enabled only when a previous rescue of the inserted disc left failed sectors. -->
+            <Button x:Name="RetryButton" Content="Retry failed" Click="RetryButton_Click" FontSize="15" Padding="12,5" IsEnabled="False"/>
             <Button x:Name="ScanButton" Content="Scan disc" Click="ScanButton_Click" FontSize="15" Padding="12,5"/>
-            <Button x:Name="SpikeButton" Content="Feasibility test" Click="SpikeButton_Click" FontSize="15" Padding="12,5"/>
         </StackPanel>
 
         <!-- Info panels: small fonts and a fixed maximum height (the details are in the log). -->

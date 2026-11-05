@@ -70,6 +70,9 @@ Combined with the jumps, the readable part of the disc is secured first.
 - **Pause and resume:** **B** (or *Cancel*) pauses at the end of the current command. **Rescue /
   resume** continues from where it stopped, also after the app was closed or killed. The map is
   saved every 30 s and at the end of every pass.
+- **Retry failed:** each press runs the normal passes (if anything is left) plus **one more retry pass**
+  over the bad sectors, even when `RetryPasses` is used up. On a healthy disc pass 1 reads everything,
+  the hash is computed and nothing else runs.
 - **Hash:** once nothing is left to try (no `?`/`*` and the retry passes are done), the app computes
   the **SHA-256 of the image file** and writes `VOLUME.sha256`. It can't be computed while reading,
   because the passes write the data out of order.

@@ -36,6 +36,8 @@ namespace xISOBurn.Core
         public bool Cancelled;
         public string Error;
         public long Ok, Untried, Pending, Bad;
+        /// <summary>Sectors tried / recovered by the scrape and retry passes of this run.</summary>
+        public long RetriedThisRun, RecoveredThisRun;
         public string Sha256;
         public string ImagePath, MapPath;
         public TimeSpan Elapsed;
@@ -92,13 +94,33 @@ namespace xISOBurn.Core
         private int _lastPercentLogged;
         private byte[] _originalErrorPage; // MODE page 01h as found, to restore
 
-        public RescueJob(OpticalDrive drive, DiscProbe probe, CopyConfig cfg, Logger log, string folder)
+        private readonly bool _extraRetryPass;
+        private long _retried, _recovered;
+
+        /// <summary>File names used for a disc (also used by the UI to look for a previous rescue).</summary>
+        public static string BaseNameFor(CopyConfig cfg, DiscProbe probe)
+        {
+            string name = cfg.OutputName;
+            if (string.IsNullOrWhiteSpace(name)) name = probe.VolumeLabel;
+            if (string.IsNullOrWhiteSpace(name)) name = "disc";
+            var sb = new StringBuilder();
+            foreach (char c in name.Trim())
+                sb.Append(Array.IndexOf(Path.GetInvalidFileNameChars(), c) >= 0 ? '_' : c);
+            return sb.ToString();
+        }
+
+        /// <param name="extraRetryPass">
+        /// "Retry failed" button: after the normal passes, one more retry pass over the bad sectors even
+        /// if RetryPasses is already used up. Each press of the button is one more pass.
+        /// </param>
+        public RescueJob(OpticalDrive drive, DiscProbe probe, CopyConfig cfg, Logger log, string folder, bool extraRetryPass = false)
         {
             _drive = drive;
             _probe = probe;
             _cfg = cfg;
             _log = log;
             _folder = folder;
+            _extraRetryPass = extraRetryPass;
         }
 
         public async Task<RescueResult> RunAsync(IProgress<RescueProgress> progress, CancellationToken ct)
@@ -151,6 +173,20 @@ namespace xISOBurn.Core
                                               SectorState.Bad, first, end);
                         _map.RetryPassesDone++;
                         SaveMap(null);
+                    }
+                    if (_extraRetryPass)
+                    {
+                        if (_map.CountIn(SectorState.Bad, first, end) > 0)
+                        {
+                            if (!slowed) slowed = await SetSpeedAsync(_cfg.RetryReadSpeedKBps);
+                            await SectorPassAsync("Extra retry pass " + (_map.RetryPassesDone + 1), SectorState.Bad, first, end);
+                            _map.RetryPassesDone++;
+                            SaveMap(null);
+                        }
+                        else
+                        {
+                            _log.Info("Retry failed: no bad sectors left to retry in the work range.");
+                        }
                     }
                 }
                 finally
@@ -208,8 +244,12 @@ namespace xISOBurn.Core
             result.Untried = _map.Count(SectorState.Untried);
             result.Pending = _map.Count(SectorState.Pending);
             result.Bad = _map.Count(SectorState.Bad);
+            result.RetriedThisRun = _retried;
+            result.RecoveredThisRun = _recovered;
 
             _log.Section("Rescue result");
+            if (_retried > 0)
+                _log.Info("Retries this run: " + _recovered + " of " + _retried + " sector(s) recovered.");
             _log.Info(result.Finished ? "Nothing left to try." : result.Cancelled ? "Cancelled; run again to resume." :
                       result.Error != null ? "Stopped: " + result.Error : "Paused; run again to continue.");
             _log.Info("Disc: " + _map.Summary());
@@ -225,13 +265,7 @@ namespace xISOBurn.Core
 
         private string BaseName()
         {
-            string name = _cfg.OutputName;
-            if (string.IsNullOrWhiteSpace(name)) name = _probe.VolumeLabel;
-            if (string.IsNullOrWhiteSpace(name)) name = "disc";
-            var sb = new StringBuilder();
-            foreach (char c in name.Trim())
-                sb.Append(Array.IndexOf(Path.GetInvalidFileNameChars(), c) >= 0 ? '_' : c);
-            return sb.ToString();
+            return BaseNameFor(_cfg, _probe);
         }
 
         private void LoadOrCreateMap(long total)
@@ -414,6 +448,8 @@ namespace xISOBurn.Core
                 Report(pos);
             }
             _log.Info(phase + ": recovered " + recovered + " of " + _phaseTotal + " sector(s).");
+            _retried += _phaseTotal;
+            _recovered += recovered;
             EndPhase();
         }
 

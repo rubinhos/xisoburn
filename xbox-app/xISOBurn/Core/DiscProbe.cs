@@ -168,9 +168,8 @@ namespace xISOBurn.Core
                 media += ", 1 layer";
             yield return media;
             yield return "Volume: " + (VolumeLabel.Length > 0 ? VolumeLabel : "(no ISO9660)") + (Udf ? " | UDF" : "");
-            yield return "Size: " + TotalSectors.ToString("N0") + " sectors (" + FormatSize(TotalSectors) + ") - " + TotalSource;
-            if (Pfi != null && Pfi.NumberOfLayers > 1)
-                yield return "Layer change at LBA " + Pfi.Layer0Sectors.ToString("N0");
+            yield return "Size: " + TotalSectors.ToString("N0") + " sectors (" + FormatSize(TotalSectors) + ")" +
+                         (Pfi != null && Pfi.NumberOfLayers > 1 ? " | layer change at LBA " + Pfi.Layer0Sectors.ToString("N0") : "");
             if (Cpst >= 0)
                 yield return "Protection: " + CpstName(Cpst) + (Cpst == 1 ? " (the image may come out scrambled)" : "") +
                              (Files.Count > 0 ? " | " + Files.Count + " files" : "") +

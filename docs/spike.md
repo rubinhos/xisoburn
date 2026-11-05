@@ -2,14 +2,15 @@
 
 The goal was to find out, on a real console, whether the Xbox Series X drive reads the DVD and
 **what** it returns. The test only reads: it writes nothing to the disc or the drive and uses no
-network. It is still available in the app as **Feasibility test**.
+network. Its code (Spike/SpikeRunner.cs) was removed from the app after milestone 2 and remains in the git
+history; the **Scan disc** button covers the same need for other discs.
 
 To build and install the app, see [install.md](install.md).
 
 ## Running the test
 
 1. Insert the disc. If the console opens the movie player, close it.
-2. Open xISOBurn, select **Feasibility test** and press **A**. Don't leave the app while it runs.
+2. Open xISOBurn (builds up to 0.1.7), select **Feasibility test** and press **A**. Don't leave the app while it runs.
    The test takes under a minute if the disc is fine, and several minutes if there are bad sectors
    (each one can take up to 30 s).
 3. A **SUMMARY** appears at the end. The full log, `spike-YYYYMMDD-HHMMSS.log`, and the first ~2 MB
