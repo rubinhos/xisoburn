@@ -1,12 +1,12 @@
-# Compila o app do Xbox (UWP x64) e gera um pacote .msix assinado, pronto para instalar pelo
-# Device Portal do Xbox. Nada precisa estar instalado no seu PC: tudo roda no runner do GitHub,
-# que já vem com o Visual Studio 2022 (carga UWP) e o Windows SDK 10.0.26100.
+# Builds the Xbox app (UWP x64) and produces a signed .msix package, ready to install through the
+# Xbox Device Portal. Nothing needs to be installed on your PC: everything runs on the GitHub runner,
+# which already ships Visual Studio 2022 (UWP workload) and the Windows SDK 10.0.26100.
 #
-# Assinatura:
-#   - Se os secrets SIGNING_PFX_BASE64 e SIGNING_PFX_PASSWORD existirem, usa esse certificado
-#     (assim todas as versões saem com a mesma assinatura).
-#   - Senão, gera um certificado autoassinado novo (CN=xISOBurn) a cada build.
-#   O Subject do certificado TEM que ser igual ao Publisher do Package.appxmanifest.
+# Signing:
+#   - If the SIGNING_PFX_BASE64 and SIGNING_PFX_PASSWORD secrets exist, that certificate is used
+#     (so every version carries the same signature).
+#   - Otherwise a new self-signed certificate (CN=xISOBurn) is generated on every build.
+#   The certificate Subject MUST match the Publisher in Package.appxmanifest.
 
 name: build
 
@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   xbox-app:
-    name: App Xbox (UWP x64)
+    name: Xbox app (UWP x64)
     runs-on: windows-2025
     env:
       PROJECT: xbox-app\xISOBurn\xISOBurn.csproj
@@ -33,7 +33,7 @@ jobs:
 
       - uses: microsoft/setup-msbuild@v3
 
-      - name: Versão do pacote (0.1.<número do build>.0)
+      - name: Package version (0.1.<build number>.0)
         shell: pwsh
         run: |
           $version = "0.1.${{ github.run_number }}.0"
@@ -43,9 +43,9 @@ jobs:
           $xml.Save($path)
           "PKG_VERSION=$version" >> $env:GITHUB_ENV
           "OUT_DIR=$env:GITHUB_WORKSPACE\out" >> $env:GITHUB_ENV
-          Write-Host "Versão: $version"
+          Write-Host "Version: $version"
 
-      - name: Certificado de assinatura
+      - name: Signing certificate
         shell: pwsh
         env:
           PFX_BASE64: ${{ secrets.SIGNING_PFX_BASE64 }}
@@ -58,19 +58,19 @@ jobs:
             $secure = ConvertTo-SecureString $password -AsPlainText -Force
             $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $secure |
               Where-Object { $_.HasPrivateKey } | Select-Object -First 1
-            Write-Host "Usando o certificado do secret SIGNING_PFX_BASE64."
+            Write-Host "Using the certificate from the SIGNING_PFX_BASE64 secret."
           } else {
             $password = [guid]::NewGuid().ToString("N")
             $secure = ConvertTo-SecureString $password -AsPlainText -Force
-            # EKU 1.3.6.1.5.5.7.3.3 = assinatura de código; 2.5.29.19 = sem CA (exigido para pacotes).
+            # EKU 1.3.6.1.5.5.7.3.3 = code signing; 2.5.29.19 = not a CA (required for packages).
             $cert = New-SelfSignedCertificate -Type Custom -Subject $env:PUBLISHER `
-              -KeyUsage DigitalSignature -FriendlyName "xISOBurn (teste)" `
+              -KeyUsage DigitalSignature -FriendlyName "xISOBurn (test)" `
               -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(5) `
               -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
             Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $secure | Out-Null
-            Write-Host "Certificado autoassinado gerado neste build (sem secret configurado)."
+            Write-Host "Self-signed certificate generated for this build (no secret configured)."
           }
-          if ($cert.Subject -ne $env:PUBLISHER) { throw "Subject '$($cert.Subject)' diferente do Publisher '$env:PUBLISHER'" }
+          if ($cert.Subject -ne $env:PUBLISHER) { throw "Subject '$($cert.Subject)' differs from Publisher '$env:PUBLISHER'" }
           New-Item -ItemType Directory -Force $env:OUT_DIR | Out-Null
           Export-Certificate -Cert $cert -FilePath "$env:OUT_DIR\xISOBurn.cer" | Out-Null
           Write-Host "::add-mask::$password"
@@ -79,16 +79,16 @@ jobs:
           "PFX_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
           Write-Host "Thumbprint: $($cert.Thumbprint)"
 
-      - name: Restaurar pacotes NuGet
+      - name: Restore NuGet packages
         shell: pwsh
         run: msbuild $env:PROJECT -t:Restore -p:Configuration=Release -p:Platform=x64 -v:minimal
 
-      - name: Compilar e empacotar (Release x64, .NET Native)
+      - name: Build and package (Release x64, .NET Native)
         shell: pwsh
         run: |
-          # Caminho sem espaços e terminado em "\" (exigido por AppxPackageDir), passado sem aspas
-          # para o "\" final não escapar uma aspa na linha de comando do MSBuild.
-          $pkgDir = "$env:OUT_DIR\pacote\"
+          # Path without spaces and ending in "\" (required by AppxPackageDir), passed unquoted so the
+          # trailing "\" does not escape a quote on the MSBuild command line.
+          $pkgDir = "$env:OUT_DIR\package\"
           msbuild $env:PROJECT -m -v:minimal `
             -p:Configuration=Release -p:Platform=x64 `
             -p:AppxBundle=Never -p:UapAppxPackageBuildMode=SideloadOnly `
@@ -99,17 +99,17 @@ jobs:
             -p:PackageCertificateThumbprint=$env:PFX_THUMBPRINT
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Conferir saída
+      - name: Check output
         shell: pwsh
         run: |
           $files = Get-ChildItem $env:OUT_DIR -Recurse -File
           $files | ForEach-Object { Write-Host ("{0,10:N0}  {1}" -f $_.Length, $_.FullName.Substring($env:OUT_DIR.Length + 1)) }
           $msix = $files | Where-Object { $_.Extension -in ".msix", ".appx" -and $_.Name -like "xISOBurn*" }
-          if (-not $msix) { throw "Pacote do app não encontrado em $env:OUT_DIR" }
+          if (-not $msix) { throw "App package not found in $env:OUT_DIR" }
           $sig = Get-AuthenticodeSignature $msix[0].FullName
-          Write-Host "Assinatura: $($sig.SignerCertificate.Subject) ($($sig.Status))"
+          Write-Host "Signature: $($sig.SignerCertificate.Subject) ($($sig.Status))"
           "## xISOBurn $env:PKG_VERSION" >> $env:GITHUB_STEP_SUMMARY
-          "Baixe o artefato **xISOBurn-xbox-$env:PKG_VERSION** e siga docs/spike.md (seção Instalação)." >> $env:GITHUB_STEP_SUMMARY
+          "Download the **xISOBurn-xbox-$env:PKG_VERSION** artifact and follow docs/install.md." >> $env:GITHUB_STEP_SUMMARY
           '```' >> $env:GITHUB_STEP_SUMMARY
           $files | ForEach-Object { $_.FullName.Substring($env:OUT_DIR.Length + 1) } >> $env:GITHUB_STEP_SUMMARY
           '```' >> $env:GITHUB_STEP_SUMMARY

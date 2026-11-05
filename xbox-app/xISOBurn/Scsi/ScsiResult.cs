@@ -1,17 +1,17 @@
 namespace xISOBurn.Scsi
 {
-    /// <summary>Resultado de um comando SCSI enviado por pass-through.</summary>
+    /// <summary>Result of a SCSI command sent through pass-through.</summary>
     internal sealed class ScsiResult
     {
-        /// <summary>A chamada IOCTL (SendIOControlAsync) completou sem exceção.</summary>
+        /// <summary>The IOCTL call (SendIOControlAsync) completed without an exception.</summary>
         public bool IoctlOk;
-        /// <summary>HRESULT da exceção, quando IoctlOk == false.</summary>
+        /// <summary>HRESULT of the exception, when IoctlOk == false.</summary>
         public int HResult;
         public string IoctlError;
 
-        /// <summary>Status SCSI: 0 = GOOD, 2 = CHECK CONDITION (ver Sense).</summary>
+        /// <summary>SCSI status: 0 = GOOD, 2 = CHECK CONDITION (see Sense).</summary>
         public byte ScsiStatus;
-        /// <summary>Bytes de dados efetivamente transferidos (DataTransferLength devolvido).</summary>
+        /// <summary>Data bytes actually transferred (returned DataTransferLength).</summary>
         public int DataLength;
         public SenseInfo Sense;
         public double ElapsedMs;
@@ -21,11 +21,12 @@ namespace xISOBurn.Scsi
         public string Describe()
         {
             if (!IoctlOk)
-                return "falha no IOCTL: HRESULT 0x" + HResult.ToString("X8") + " " + IoctlError;
+                return "IOCTL failed: HRESULT 0x" + HResult.ToString("X8") + " " + IoctlError +
+                       (Sense != null ? ", sense " + Sense : "");
             if (ScsiStatus == 0)
                 return "OK (" + DataLength + " bytes, " + ElapsedMs.ToString("0.0") + " ms)";
-            return "status SCSI 0x" + ScsiStatus.ToString("X2") +
-                   (Sense != null ? ", sense " + Sense : ", sem sense") +
+            return "SCSI status 0x" + ScsiStatus.ToString("X2") +
+                   (Sense != null ? ", sense " + Sense : ", no sense") +
                    " (" + ElapsedMs.ToString("0.0") + " ms)";
         }
     }

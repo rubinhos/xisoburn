@@ -11,40 +11,40 @@ using xISOBurn.Util;
 namespace xISOBurn.Scsi
 {
     /// <summary>
-    /// Acesso ao drive óptico do Xbox por Windows.Devices.Custom + SCSI pass-through.
+    /// Access to the Xbox optical drive through Windows.Devices.Custom + SCSI pass-through.
     ///
-    /// Por que assim: em apps de console, CreateFile("\\.\X:") e os IOCTL_CDROM/IOCTL_DVD são
-    /// recusados; o caminho que abre em Modo Dev é a interface de dispositivo CD-ROM aberta como
-    /// CustomDevice. Isto replica pcsx2/CDVD/Windows/IOCtlSrcXbox.cpp do XBSX2 (PR #11):
-    ///   - DeviceInformation.FindAllAsync com o filtro AQS da classe de interface CD-ROM;
+    /// Why this way: console apps are refused CreateFile("\\.\X:") and the IOCTL_CDROM/IOCTL_DVD
+    /// requests; the route that opens in Dev Mode is the CD-ROM device interface opened as a
+    /// CustomDevice. This mirrors pcsx2/CDVD/Windows/IOCtlSrcXbox.cpp from XBSX2 (PR #11):
+    ///   - DeviceInformation.FindAllAsync with the AQS filter for the CD-ROM interface class;
     ///   - CustomDevice.FromIdAsync(id, ReadWrite, Shared);
-    ///   - IOControlCode(IOCTL_SCSI_BASE=0x0004, função 0x401, ReadWrite, Buffered)
-    ///     = IOCTL_SCSI_PASS_THROUGH (0x4D004), a variante COM BUFFER (não a _DIRECT): a estrutura,
-    ///     o sense e os dados vão num único buffer contíguo.
+    ///   - IOControlCode(IOCTL_SCSI_BASE=0x0004, function 0x401, ReadWrite, Buffered)
+    ///     = IOCTL_SCSI_PASS_THROUGH (0x4D004), the BUFFERED variant (not _DIRECT): the structure,
+    ///     the sense data and the data travel in a single contiguous buffer.
     /// </summary>
     internal sealed class OpticalDrive : IDisposable
     {
-        /// <summary>GUID_DEVINTERFACE_CDROM (o mesmo declarado como DeviceCapability no manifesto).</summary>
+        /// <summary>GUID_DEVINTERFACE_CDROM (the same one declared as a DeviceCapability in the manifest).</summary>
         public const string CdromInterfaceClass = "{53f56308-b6bf-11d0-94f2-00a0c91efb8b}";
 
-        /// <summary>Filtro AQS idêntico ao DRIVE_SELECTOR do XBSX2.</summary>
+        /// <summary>AQS filter identical to XBSX2's DRIVE_SELECTOR.</summary>
         public const string Selector = "System.Devices.InterfaceClassGuid:=\"" + CdromInterfaceClass + "\"";
 
         public const int SectorSize = 2048;
 
-        // Layout de SCSI_PASS_THROUGH em x64 (ntddscsi.h), sizeof = 56:
+        // SCSI_PASS_THROUGH layout on x64 (ntddscsi.h), sizeof = 56:
         //   0 USHORT Length          2 UCHAR ScsiStatus      3 UCHAR PathId
         //   4 UCHAR TargetId         5 UCHAR Lun             6 UCHAR CdbLength
-        //   7 UCHAR SenseInfoLength  8 UCHAR DataIn          (9..11 alinhamento)
+        //   7 UCHAR SenseInfoLength  8 UCHAR DataIn          (9..11 padding)
         //  12 ULONG DataTransferLength                       16 ULONG TimeOutValue
-        //  (20..23 alinhamento)     24 ULONG_PTR DataBufferOffset (8 bytes em x64)
-        //  32 ULONG SenseInfoOffset 36 UCHAR Cdb[16]         (52..55 alinhamento)
-        // O app é só x64; em processo 32 bits o layout seria outro (SCSI_PASS_THROUGH32).
+        //  (20..23 padding)         24 ULONG_PTR DataBufferOffset (8 bytes on x64)
+        //  32 ULONG SenseInfoOffset 36 UCHAR Cdb[16]         (52..55 padding)
+        // The app is x64 only; a 32-bit process would need a different layout (SCSI_PASS_THROUGH32).
         private const int SptSize = 56;
         private const int OffLength = 0, OffScsiStatus = 2, OffCdbLength = 6, OffSenseLength = 7, OffDataIn = 8;
         private const int OffTransferLength = 12, OffTimeout = 16, OffDataOffset = 24, OffSenseOffset = 32, OffCdb = 36;
         private const int SenseSize = 32;
-        /// <summary>Cabeçalho = estrutura + sense; os dados começam logo depois (como no XBSX2).</summary>
+        /// <summary>Header = structure + sense; the data starts right after it (as in XBSX2).</summary>
         public const int HeaderSize = SptSize + SenseSize; // 88
 
         private const byte SCSI_IOCTL_DATA_IN = 1;
@@ -56,7 +56,7 @@ namespace xISOBurn.Scsi
         private readonly byte[] _out;
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
 
-        /// <summary>Maior transferência de dados aceita por este objeto (tamanho dos buffers).</summary>
+        /// <summary>Largest data transfer this object accepts (buffer size).</summary>
         public int MaxTransferBytes { get; private set; }
         public string DeviceId { get; private set; }
         public uint ControlCode { get { return _code.ControlCode; } }
@@ -81,23 +81,32 @@ namespace xISOBurn.Scsi
             return list;
         }
 
-        /// <summary>Abre o drive. Lança exceção (com HRESULT) se o sistema recusar.</summary>
+        /// <summary>Opens the drive. Throws (with an HRESULT) if the system refuses.</summary>
         public static async Task<OpticalDrive> OpenAsync(string deviceId, int maxTransferBytes)
         {
             var device = await CustomDevice.FromIdAsync(deviceId, DeviceAccessMode.ReadWrite, DeviceSharingMode.Shared);
             if (device == null)
-                // O XBSX2 trata "null sem exceção" como acesso negado (capacidade ausente/consentimento).
-                throw new UnauthorizedAccessException("CustomDevice.FromIdAsync devolveu null (acesso negado?)");
+                // XBSX2 treats "null without an exception" as access denied (missing capability/consent).
+                throw new UnauthorizedAccessException("CustomDevice.FromIdAsync returned null (access denied?)");
             return new OpticalDrive(device, deviceId, maxTransferBytes);
         }
 
+        /// <summary>Finds the first CD-ROM interface and opens it. Throws if there is no drive.</summary>
+        public static async Task<OpticalDrive> FindAndOpenAsync(int maxTransferBytes)
+        {
+            var devices = await FindAsync();
+            if (devices.Count == 0)
+                throw new InvalidOperationException("No optical drive found (CD-ROM interface).");
+            return await OpenAsync(devices[0].Id, maxTransferBytes);
+        }
+
         /// <summary>
-        /// Envia um CDB. Se dataLength > 0, é um comando de leitura (DATA IN) e os dados são copiados
-        /// para dest[destOffset..]. Nunca lança exceção: erros voltam no ScsiResult.
+        /// Sends a CDB. If dataLength > 0 it is a read command (DATA IN) and the data is copied to
+        /// dest[destOffset..]. Never throws: errors come back in the ScsiResult.
         /// </summary>
         public async Task<ScsiResult> SendAsync(byte[] cdb, int dataLength, byte[] dest, int destOffset, uint timeoutSeconds)
         {
-            if (cdb.Length == 0 || cdb.Length > 16) throw new ArgumentException("CDB deve ter 1..16 bytes");
+            if (cdb.Length == 0 || cdb.Length > 16) throw new ArgumentException("A CDB must be 1..16 bytes");
             if (dataLength < 0 || dataLength > MaxTransferBytes) throw new ArgumentOutOfRangeException("dataLength");
 
             await _gate.WaitAsync();
@@ -105,10 +114,10 @@ namespace xISOBurn.Scsi
             {
                 var result = await SendCoreAsync(cdb, dataLength, dest, destOffset, timeoutSeconds);
 
-                // No spike, leituras fora do fim do disco voltaram como "resposta curta (3 bytes)", sem
-                // sense. Nesses casos pedimos o sense explicitamente (REQUEST SENSE, 0x03). Se o driver
-                // já consumiu o sense (auto-sense), o drive responde "NO SENSE" e a informação se perde,
-                // mas não custa tentar: é um comando rápido e sem efeito colateral.
+                // In the spike, reads past the end of the disc came back as a "short response (3 bytes)"
+                // with no sense data. In that case we ask for the sense explicitly (REQUEST SENSE, 0x03).
+                // If the driver already consumed it (auto-sense), the drive answers "NO SENSE" and the
+                // information is lost, but trying costs little: it is fast and has no side effects.
                 if (!result.Success && result.Sense == null && cdb[0] != 0x03)
                 {
                     var sense = new byte[18];
@@ -149,9 +158,8 @@ namespace xISOBurn.Scsi
                 Bytes.PutLE32(_in, OffSenseOffset, SptSize);
                 Buffer.BlockCopy(cdb, 0, _in, OffCdb, cdb.Length);
 
-                // Como no XBSX2: entrada com Length = cabeçalho + dados; saída com Length 0 e
-                // capacidade cheia. Os IBuffer embrulham os arrays gerenciados, então a resposta do
-                // driver aparece direto em _out.
+                // As in XBSX2: input Length = header + data; output Length 0 with full capacity.
+                // The IBuffers wrap the managed arrays, so the driver's reply lands directly in _out.
                 var input = _in.AsBuffer(0, HeaderSize + dataLength);
                 var output = _out.AsBuffer(0, 0, _out.Length);
                 uint received = await _device.SendIOControlAsync(_code, input, output);
@@ -159,11 +167,11 @@ namespace xISOBurn.Scsi
 
                 if (received < SptSize)
                 {
-                    // Registrar os bytes crus ajuda a entender o que o driver do Xbox devolve nesse caso.
+                    // Logging the raw bytes helps to understand what the Xbox driver returns in this case.
                     var raw = new System.Text.StringBuilder();
                     for (int i = 0; i < Math.Min((int)received, 16); i++) raw.Append(_out[i].ToString("x2")).Append(' ');
                     result.IoctlOk = false;
-                    result.IoctlError = "resposta curta (" + received + " bytes: " + raw.ToString().Trim() + ")";
+                    result.IoctlError = "short response (" + received + " bytes: " + raw.ToString().Trim() + ")";
                     return result;
                 }
 
@@ -184,7 +192,7 @@ namespace xISOBurn.Scsi
                     if (transferred > dataLength || transferred > available)
                     {
                         result.IoctlOk = false;
-                        result.IoctlError = "DataTransferLength inválido (" + transferred + ", recebidos " + received + ")";
+                        result.IoctlError = "invalid DataTransferLength (" + transferred + ", received " + received + ")";
                         return result;
                     }
                     result.DataLength = (int)transferred;
@@ -205,19 +213,10 @@ namespace xISOBurn.Scsi
             return result;
         }
 
-        /// <summary>Procura a primeira interface CD-ROM e abre. Lança exceção se não houver drive.</summary>
-        public static async Task<OpticalDrive> FindAndOpenAsync(int maxTransferBytes)
-        {
-            var devices = await FindAsync();
-            if (devices.Count == 0)
-                throw new InvalidOperationException("Nenhum drive óptico encontrado (interface CD-ROM).");
-            return await OpenAsync(devices[0].Id, maxTransferBytes);
-        }
-
         public void Dispose()
         {
-            // Os metadados do SDK não declaram IClosable em CustomDevice, mas o XBSX2 consulta e fecha
-            // em tempo de execução (try_as<IClosable>). Mesmo efeito aqui: teste dinâmico via object.
+            // The SDK metadata does not declare IClosable on CustomDevice, but XBSX2 queries for it and
+            // closes it at runtime (try_as<IClosable>). Same effect here: a dynamic check through object.
             object boxed = _device;
             var d = boxed as IDisposable;
             if (d != null) d.Dispose();

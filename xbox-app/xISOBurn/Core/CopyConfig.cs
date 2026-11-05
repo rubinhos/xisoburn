@@ -7,30 +7,30 @@ using Windows.Data.Json;
 namespace xISOBurn.Core
 {
     /// <summary>
-    /// Configuração da cópia, guardada em LocalState\config.json. Se o arquivo não existir, é criado com
-    /// os valores padrão. Para editar sem teclado no console, baixe o arquivo pelo Device Portal
-    /// (File explorer > LocalAppData > xISOBurn_... > LocalState), edite no PC e envie de volta (Upload).
-    /// O arquivo é relido a cada cópia.
+    /// Copy settings, stored in LocalState\config.json. If the file does not exist it is created with
+    /// the defaults. To edit it without a keyboard on the console, download it from the Device Portal
+    /// (File explorer > LocalAppData > xISOBurn_... > LocalState), edit it on the PC and upload it back.
+    /// The file is read again before every copy.
     /// </summary>
     internal sealed class CopyConfig
     {
         public const string FileName = "config.json";
 
-        /// <summary>Setores por READ(10). O spike mostrou que 16..64 funcionam no drive do Series X.</summary>
+        /// <summary>Sectors per READ(10). The spike showed 16..64 work on the Series X drive.</summary>
         public int SectorsPerRead = 32;
-        /// <summary>Novas tentativas do bloco inteiro depois da primeira falha.</summary>
+        /// <summary>Extra attempts for the whole block after the first failure.</summary>
         public int BlockRetries = 5;
-        /// <summary>Novas tentativas de cada setor, na leitura setor a setor.</summary>
+        /// <summary>Extra attempts for each sector during the sector-by-sector pass.</summary>
         public int SectorRetries = 5;
-        /// <summary>Tempo máximo de cada comando SCSI (segundos). Setor ruim pode levar vários segundos.</summary>
+        /// <summary>Maximum time per SCSI command (seconds). A bad sector can take several seconds.</summary>
         public int TimeoutSeconds = 20;
-        /// <summary>Primeiro setor a copiar (para testes de trechos).</summary>
+        /// <summary>First sector to copy (for testing a range).</summary>
         public long StartSector = 0;
-        /// <summary>Quantidade máxima de setores (0 = até o fim do disco).</summary>
+        /// <summary>Maximum number of sectors (0 = up to the end of the disc).</summary>
         public long SectorLimit = 0;
-        /// <summary>false = só lê, calcula o hash e gera o mapa, sem gravar a imagem (teste do drive).</summary>
+        /// <summary>false = only read, hash and build the map, without writing the image (drive test).</summary>
         public bool WriteImage = true;
-        /// <summary>Nome do arquivo sem extensão. Vazio = rótulo do volume do disco.</summary>
+        /// <summary>File name without extension. Empty = the disc's volume label.</summary>
         public string OutputName = "";
 
         public const int MaxSectorsPerRead = 64;
@@ -42,14 +42,14 @@ namespace xISOBurn.Core
             if (!File.Exists(path))
             {
                 cfg.Save(folder);
-                message = "config.json criado com os valores padrão.";
+                message = "config.json created with the default values.";
                 return cfg;
             }
 
             JsonObject o;
             if (!JsonObject.TryParse(File.ReadAllText(path), out o))
             {
-                message = "config.json inválido (JSON mal formado); usando os valores padrão. O arquivo não foi alterado.";
+                message = "config.json is invalid (malformed JSON); using the defaults. The file was not changed.";
                 return cfg;
             }
 
@@ -66,32 +66,31 @@ namespace xISOBurn.Core
             }
             catch (Exception ex)
             {
-                // GetNamed* lança exceção se o tipo do valor estiver errado (ex.: número entre aspas).
-                message = "config.json com valor de tipo errado (" + ex.Message + "); usando os valores padrão.";
+                // GetNamed* throws if a value has the wrong type (e.g. a number in quotes).
+                message = "config.json has a value of the wrong type (" + ex.Message + "); using the defaults.";
                 return new CopyConfig();
             }
-            message = cfg.Clamp() ? "config.json lido (alguns valores fora do limite foram ajustados)." : "config.json lido.";
+            message = cfg.Clamp() ? "config.json loaded (some out-of-range values were adjusted)." : "config.json loaded.";
             return cfg;
         }
 
-        /// <summary>Mantém os valores em faixas seguras. Devolve true se algo foi ajustado.</summary>
+        /// <summary>Keeps values within safe ranges. Returns true if anything was adjusted.</summary>
         private bool Clamp()
         {
-            bool changed = false;
             int spr = Math.Max(1, Math.Min(MaxSectorsPerRead, SectorsPerRead));
             int br = Math.Max(0, Math.Min(50, BlockRetries));
             int sr = Math.Max(0, Math.Min(50, SectorRetries));
             int to = Math.Max(5, Math.Min(120, TimeoutSeconds));
             long ss = Math.Max(0, StartSector);
             long sl = Math.Max(0, SectorLimit);
-            changed = spr != SectorsPerRead || br != BlockRetries || sr != SectorRetries || to != TimeoutSeconds || ss != StartSector || sl != SectorLimit;
+            bool changed = spr != SectorsPerRead || br != BlockRetries || sr != SectorRetries || to != TimeoutSeconds || ss != StartSector || sl != SectorLimit;
             SectorsPerRead = spr; BlockRetries = br; SectorRetries = sr; TimeoutSeconds = to; StartSector = ss; SectorLimit = sl;
             return changed;
         }
 
         public void Save(string folder)
         {
-            // Escrito à mão para ficar legível e com ordem fixa.
+            // Written by hand so it stays readable and keeps a fixed order.
             var sb = new StringBuilder();
             sb.Append("{\n");
             sb.Append("  \"SectorsPerRead\": ").Append(SectorsPerRead).Append(",\n");
@@ -108,10 +107,10 @@ namespace xISOBurn.Core
 
         public string Describe()
         {
-            return "bloco " + SectorsPerRead + " setores | tentativas: bloco " + BlockRetries + ", setor " + SectorRetries +
-                   " | timeout " + TimeoutSeconds + " s | início " + StartSector +
-                   " | limite " + (SectorLimit > 0 ? SectorLimit.ToString() : "fim do disco") +
-                   " | gravar imagem: " + (WriteImage ? "sim" : "não");
+            return "block " + SectorsPerRead + " sectors | retries: block " + BlockRetries + ", sector " + SectorRetries +
+                   " | timeout " + TimeoutSeconds + " s | start " + StartSector +
+                   " | limit " + (SectorLimit > 0 ? SectorLimit.ToString() : "end of disc") +
+                   " | write image: " + (WriteImage ? "yes" : "no");
         }
     }
 }

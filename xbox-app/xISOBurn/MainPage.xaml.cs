@@ -14,7 +14,7 @@ using xISOBurn.Util;
 
 namespace xISOBurn
 {
-    /// <summary>Uma linha do log na tela (objeto próprio para ScrollIntoView funcionar com linhas repetidas).</summary>
+    /// <summary>One log line on screen (its own object so ScrollIntoView works with repeated lines).</summary>
     public sealed class LogLine
     {
         public LogLine(string text) { Text = text; }
@@ -28,7 +28,7 @@ namespace xISOBurn
         private readonly string _folder = ApplicationData.Current.LocalFolder.Path;
         private readonly Logger _log;
 
-        // O drive é aberto e usado sempre em threads do pool (MTA), como o XBSX2 faz; a UI só espera.
+        // The drive is always opened and used on thread-pool (MTA) threads, as XBSX2 does; the UI only awaits.
         private OpticalDrive _drive;
         private DiscProbe _probe;
         private CancellationTokenSource _cts;
@@ -39,16 +39,16 @@ namespace xISOBurn
             InitializeComponent();
             LogList.ItemsSource = _lines;
             _log = new Logger(_folder, "xisoburn", AddLine);
-            _log.Info("xISOBurn iniciado. Pasta de dados: " + _folder);
+            _log.Info("xISOBurn started. Data folder: " + _folder);
 
             string msg;
             var cfg = CopyConfig.Load(_folder, out msg);
             _log.Info(msg);
             ConfigText.Text = cfg.Describe();
-            StatusText.Text = "Coloque o disco e use \"Detectar disco\". Arquivos e logs: " + _folder;
+            StatusText.Text = "Insert the disc and choose \"Detect disc\". Files and logs: " + _folder;
 
             Loaded += (s, e) => DetectButton.Focus(FocusState.Programmatic);
-            // No Xbox, o botão B gera BackRequested. Sem tratar, o sistema pode fechar o app no meio da cópia.
+            // On Xbox, the B button raises BackRequested. Unhandled, the system may close the app mid-copy.
             SystemNavigationManager.GetForCurrentView().BackRequested += OnBackRequested;
         }
 
@@ -58,7 +58,7 @@ namespace xISOBurn
             if (_cts != null && !_cts.IsCancellationRequested)
             {
                 _cts.Cancel();
-                StatusText.Text = "Cancelando... (termina o bloco atual)";
+                StatusText.Text = "Cancelling... (finishing the current block)";
             }
         }
 
@@ -91,13 +91,13 @@ namespace xISOBurn
             try
             {
                 _drive = await Task.Run(() => OpticalDrive.FindAndOpenAsync(CopyConfig.MaxSectorsPerRead * OpticalDrive.SectorSize));
-                _log.Info("Drive aberto: " + _drive.DeviceId);
+                _log.Info("Drive opened: " + _drive.DeviceId);
                 return true;
             }
             catch (Exception ex)
             {
-                _log.Info("Não foi possível abrir o drive: 0x" + ex.HResult.ToString("X8") + " " + ex.Message);
-                StatusText.Text = "Drive não encontrado ou acesso negado (ver log).";
+                _log.Info("Could not open the drive: 0x" + ex.HResult.ToString("X8") + " " + ex.Message);
+                StatusText.Text = "Drive not found or access denied (see log).";
                 return false;
             }
         }
@@ -118,7 +118,7 @@ namespace xISOBurn
             _probe = await Task.Run(() => DiscProbe.RunAsync(drive, timeout, _log));
             DiscText.Text = string.Join("\n", _probe.Describe());
             if (!_probe.Ready && _probe.NotReadyReason.Contains("IOCTL"))
-                CloseDrive(); // o handle pode ter ficado inválido; reabre na próxima vez
+                CloseDrive(); // the handle may have gone stale; reopen next time
             return _probe.Ready && _probe.TotalSectors > 0;
         }
 
@@ -129,12 +129,12 @@ namespace xISOBurn
             try
             {
                 bool ok = await DetectAsync(20);
-                StatusText.Text = ok ? "Disco detectado. Use \"Copiar para LocalState\"." : "Disco não detectado (ver log).";
+                StatusText.Text = ok ? "Disc detected. Choose \"Copy to LocalState\"." : "No disc detected (see log).";
             }
             catch (Exception ex)
             {
-                _log.Info("ERRO na detecção: " + ex);
-                StatusText.Text = "Erro: " + ex.Message;
+                _log.Info("ERROR while detecting: " + ex);
+                StatusText.Text = "Error: " + ex.Message;
             }
             finally
             {
@@ -151,25 +151,25 @@ namespace xISOBurn
             bool displayActive = false;
             try
             {
-                // Relê a configuração a cada cópia, para valer o que foi editado pelo Device Portal.
+                // Reload the config on every copy, so edits made through the Device Portal take effect.
                 string msg;
                 var cfg = CopyConfig.Load(_folder, out msg);
                 _log.Info(msg);
                 ConfigText.Text = cfg.Describe();
 
-                // Detecta de novo: o disco pode ter sido trocado desde a última detecção.
+                // Detect again: the disc may have been swapped since the last detection.
                 if (!await DetectAsync((uint)cfg.TimeoutSeconds))
                 {
-                    StatusText.Text = "Sem disco pronto para copiar (ver log).";
+                    StatusText.Text = "No disc ready to copy (see log).";
                     return;
                 }
 
-                // Mantém a tela ligada: no Xbox, app que sai da tela ou fica com a tela apagada é suspenso.
+                // Keep the screen on: on Xbox, an app that leaves the screen or lets it dim gets suspended.
                 display.RequestActive();
                 displayActive = true;
                 _cts = new CancellationTokenSource();
                 SetBusy(true, true);
-                StatusText.Text = "Copiando... não saia do app. B cancela.";
+                StatusText.Text = "Copying... do not leave the app. B cancels.";
                 Bar.Value = 0;
 
                 var progress = new Progress<CopyProgress>(UpdateProgress);
@@ -178,17 +178,17 @@ namespace xISOBurn
                 var result = await Task.Run(() => job.RunAsync(progress, token));
 
                 if (result.Completed)
-                    StatusText.Text = "Concluído: " + result.BadSectors + " setor(es) não lido(s). SHA-256 " + result.Sha256 +
+                    StatusText.Text = "Done: " + result.BadSectors + " sector(s) unreadable. SHA-256 " + result.Sha256 +
                                       (result.ImagePath != null ? " | " + result.ImagePath : "");
                 else if (result.Cancelled)
-                    StatusText.Text = "Cancelado. Mapa parcial: " + result.MapPath;
+                    StatusText.Text = "Cancelled. Partial map: " + result.MapPath;
                 else
-                    StatusText.Text = "Interrompido: " + result.Error;
+                    StatusText.Text = "Stopped: " + result.Error;
             }
             catch (Exception ex)
             {
-                _log.Info("ERRO na cópia: " + ex);
-                StatusText.Text = "Erro: " + ex.Message;
+                _log.Info("ERROR while copying: " + ex);
+                StatusText.Text = "Error: " + ex.Message;
             }
             finally
             {
@@ -204,10 +204,10 @@ namespace xISOBurn
             double pct = p.Total > 0 ? p.Done * 100.0 / p.Total : 0;
             Bar.Value = pct;
             ProgressText.Text =
-                p.Done.ToString("N0") + " / " + p.Total.ToString("N0") + " setores (" + pct.ToString("0.0") + "%) | LBA " + p.CurrentLba.ToString("N0") + "\n" +
-                "Velocidade: " + (p.BytesPerSecond / 1048576.0).ToString("0.0") + " MiB/s | Decorrido: " + CopyJob.FormatTime(p.Elapsed) +
-                " | Restante: " + (p.Remaining.HasValue ? CopyJob.FormatTime(p.Remaining.Value) : "-") + "\n" +
-                "Setores não lidos (zeros): " + p.Bad.ToString("N0");
+                p.Done.ToString("N0") + " / " + p.Total.ToString("N0") + " sectors (" + pct.ToString("0.0") + "%) | LBA " + p.CurrentLba.ToString("N0") + "\n" +
+                "Speed: " + (p.BytesPerSecond / 1048576.0).ToString("0.0") + " MiB/s | Elapsed: " + CopyJob.FormatTime(p.Elapsed) +
+                " | Remaining: " + (p.Remaining.HasValue ? CopyJob.FormatTime(p.Remaining.Value) : "-") + "\n" +
+                "Unreadable sectors (zero-filled): " + p.Bad.ToString("N0");
         }
 
         private void CancelButton_Click(object sender, RoutedEventArgs e)
@@ -215,7 +215,7 @@ namespace xISOBurn
             if (_cts != null && !_cts.IsCancellationRequested)
             {
                 _cts.Cancel();
-                StatusText.Text = "Cancelando... (termina o bloco atual)";
+                StatusText.Text = "Cancelling... (finishing the current block)";
             }
         }
 
@@ -223,9 +223,9 @@ namespace xISOBurn
         {
             if (_busy) return;
             SetBusy(true, false);
-            CloseDrive(); // o spike abre o próprio handle
+            CloseDrive(); // the spike opens its own handle
             _lines.Clear();
-            StatusText.Text = "Executando o teste de viabilidade... não saia do app.";
+            StatusText.Text = "Running the feasibility test... do not leave the app.";
             var display = new DisplayRequest();
             display.RequestActive();
             Logger log = null;
@@ -233,12 +233,12 @@ namespace xISOBurn
             {
                 log = new Logger(_folder, "spike", AddLine);
                 await new SpikeRunner(log, _folder).RunAsync();
-                StatusText.Text = "Teste concluído. Log: " + log.FilePath;
+                StatusText.Text = "Test finished. Log: " + log.FilePath;
             }
             catch (Exception ex)
             {
-                AddLine("ERRO: " + ex);
-                StatusText.Text = "Erro: " + ex.Message;
+                AddLine("ERROR: " + ex);
+                StatusText.Text = "Error: " + ex.Message;
             }
             finally
             {

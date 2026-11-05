@@ -4,15 +4,15 @@ using System.Text;
 namespace xISOBurn.Core
 {
     /// <summary>
-    /// Intervalos de setores que não puderam ser lidos e foram preenchidos com zeros.
-    /// Os setores chegam em ordem crescente, então intervalos contíguos são unidos na hora.
+    /// Ranges of sectors that could not be read and were filled with zeros.
+    /// Sectors arrive in ascending order, so contiguous ranges are merged on the fly.
     /// </summary>
     internal sealed class BadSectorMap
     {
         public sealed class Range
         {
             public long Start;
-            public long End; // inclusivo
+            public long End; // inclusive
             public string LastError;
             public long Count { get { return End - Start + 1; } }
         }
@@ -39,24 +39,24 @@ namespace xISOBurn.Core
         }
 
         /// <summary>
-        /// Arquivo .map em texto. Linhas com '#' são comentários; cada linha de dados é
-        /// "início-fim (quantidade) último erro", com LBAs de 2048 bytes, intervalo inclusivo.
+        /// Text .map file. Lines starting with '#' are comments; each data line is
+        /// "start-end (count) last error", in 2048-byte LBAs, inclusive range.
         /// </summary>
         public string ToText(string volume, long firstSector, long endSector, long sectorsDone, bool complete, string sha256)
         {
             var sb = new StringBuilder();
-            sb.Append("# xISOBurn - mapa de setores\n");
+            sb.Append("# xISOBurn sector map\n");
             sb.Append("# volume: ").Append(volume).Append('\n');
-            sb.Append("# setor = 2048 bytes; intervalos inclusivos; LBA absoluto no disco\n");
-            sb.Append("# trecho pedido: ").Append(firstSector).Append('-').Append(endSector - 1).Append('\n');
-            sb.Append("# trecho processado: ").Append(firstSector).Append('-').Append(firstSector + sectorsDone - 1)
-              .Append(complete ? " (completo)" : " (INTERROMPIDO)").Append('\n');
-            sb.Append("# setores lidos com sucesso: ").Append(sectorsDone - TotalSectors).Append('\n');
-            sb.Append("# setores NÃO lidos (preenchidos com zeros na imagem): ").Append(TotalSectors)
-              .Append(" em ").Append(_ranges.Count).Append(" intervalo(s)\n");
+            sb.Append("# sector = 2048 bytes; inclusive ranges; absolute LBA on the disc\n");
+            sb.Append("# requested range: ").Append(firstSector).Append('-').Append(endSector - 1).Append('\n');
+            sb.Append("# processed range: ").Append(firstSector).Append('-').Append(firstSector + sectorsDone - 1)
+              .Append(complete ? " (complete)" : " (INTERRUPTED)").Append('\n');
+            sb.Append("# sectors read successfully: ").Append(sectorsDone - TotalSectors).Append('\n');
+            sb.Append("# sectors NOT read (zero-filled in the image): ").Append(TotalSectors)
+              .Append(" in ").Append(_ranges.Count).Append(" range(s)\n");
             if (!string.IsNullOrEmpty(sha256))
-                sb.Append("# sha256 da imagem (incluindo os zeros): ").Append(sha256).Append('\n');
-            sb.Append("# início-fim (quantidade) último erro\n");
+                sb.Append("# image sha256 (including the zeros): ").Append(sha256).Append('\n');
+            sb.Append("# start-end (count) last error\n");
             foreach (var r in _ranges)
                 sb.Append(r.Start).Append('-').Append(r.End).Append(" (").Append(r.Count).Append(") ").Append(r.LastError).Append('\n');
             return sb.ToString();

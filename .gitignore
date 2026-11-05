@@ -1,4 +1,4 @@
-# Build do UWP
+# UWP build output
 xbox-app/**/bin/
 xbox-app/**/obj/
 xbox-app/**/AppPackages/
@@ -6,10 +6,10 @@ xbox-app/**/BundleArtifacts/
 *.user
 .vs/
 
-# Certificados de assinatura: NUNCA versionar a chave privada
+# Signing certificates: NEVER commit the private key
 *.pfx
 
-# Saída do workflow / testes locais
+# Workflow output / local tests
 out/
 *.iso
 *.bin

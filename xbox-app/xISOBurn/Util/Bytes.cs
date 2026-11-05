@@ -3,8 +3,8 @@ using System.Text;
 namespace xISOBurn.Util
 {
     /// <summary>
-    /// Leitura/escrita de inteiros. SCSI usa big-endian nos CDBs e respostas;
-    /// a estrutura SCSI_PASS_THROUGH do Windows usa little-endian (x64).
+    /// Integer read/write helpers. SCSI uses big-endian in CDBs and responses;
+    /// the Windows SCSI_PASS_THROUGH structure uses little-endian (x64).
     /// </summary>
     internal static class Bytes
     {
@@ -32,7 +32,7 @@ namespace xISOBurn.Util
             b[o] = (byte)(v >> 24); b[o + 1] = (byte)(v >> 16); b[o + 2] = (byte)(v >> 8); b[o + 3] = (byte)v;
         }
 
-        /// <summary>Texto ASCII imprimível (outros bytes viram '.'), sem espaços nas pontas.</summary>
+        /// <summary>Printable ASCII text (other bytes become '.'), trimmed.</summary>
         public static string Ascii(byte[] b, int o, int n)
         {
             var sb = new StringBuilder(n);

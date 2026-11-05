@@ -1,38 +1,60 @@
+<p align="center">
+  <img src="xbox-app/xISOBurn/Assets/Banner.png" alt="xISOBurn" width="640">
+</p>
+
 # xISOBurn
 
-App para Xbox Series X (UWP, Modo Desenvolvedor) que lê o disco do drive óptico do console, setor
-por setor, e envia a imagem pela rede local para um receptor no PC, que grava uma ISO.
+An Xbox Series X app (UWP, Developer Mode) that reads the disc in the console's optical drive
+sector by sector and sends the image over the local network to a receiver on your PC, which writes
+an ISO file.
 
-> **Estado atual: Marco 2.** O app copia o disco inteiro para um arquivo local no Xbox (LocalState).
-> Ele tenta de novo por bloco e por setor, e gera um mapa de setores ruins e o SHA-256. Ainda não há rede.
-> - Compilar, instalar e o resultado do teste de viabilidade: [docs/spike.md](docs/spike.md)
-> - Como testar a leitura completa e o `config.json`: [docs/marco2.md](docs/marco2.md)
+It's useful when your PC's DVD drive fails on a disc (SCSI errors such as
+`MEDIUM ERROR / UNRECOVERED READ ERROR`): the Xbox drive becomes a second reader. The destination
+is the PC, over the network, because files on USB storage are limited to about 2 GB in Developer Mode.
 
-## Estrutura
+> **Current status: milestone 2.** The app copies the whole disc to a local file on the Xbox
+> (LocalState), with per-block and per-sector retries, a map of unreadable sectors and a SHA-256.
+> There's no network yet.
 
-| Pasta | Conteúdo |
-|-------|----------|
-| `xbox-app/` | Projeto UWP em C# (`xISOBurn.sln`) |
-| `xbox-app/xISOBurn/Scsi/` | Acesso ao drive: `Windows.Devices.Custom` + SCSI pass-through |
-| `xbox-app/xISOBurn/Core/` | Detecção do disco, leitura com novas tentativas, mapa de erros, cópia |
-| `xbox-app/xISOBurn/Spike/` | Roteiro do teste de viabilidade |
-| `xbox-app/tools/` | Script que gera os ícones do pacote |
-| `docs/` | Anotações e resultados do spike |
-| `.github/workflows/build.yml` | Compilação e empacotamento no GitHub Actions |
-| `pc-receiver/` | Receptor no PC (Marco 3) |
+## Documentation
 
-## Compilação
+| Document | Contents |
+|----------|----------|
+| [docs/install.md](docs/install.md) | Build (GitHub Actions), Device Portal access, installing the app, downloading logs |
+| [docs/spike.md](docs/spike.md) | Milestone 1: the feasibility test and its results on a real Series X |
+| [docs/milestone-2.md](docs/milestone-2.md) | Milestone 2: how the full read works, `config.json`, test plan |
 
-Tudo é compilado no GitHub Actions; não é preciso instalar nada no PC. Cada push para `master`
-gera um artefato com o pacote `.msix` assinado e as dependências.
+## Repository layout
 
-Opcional: para abrir no Visual Studio 2022, instale a carga *Desenvolvimento para a Plataforma
-Universal do Windows* e abra `xbox-app/xISOBurn.sln` (configuração `Release | x64`).
+| Folder | Contents |
+|--------|----------|
+| `xbox-app/` | UWP project in C# (`xISOBurn.sln`) |
+| `xbox-app/xISOBurn/Scsi/` | Drive access: `Windows.Devices.Custom` + SCSI pass-through |
+| `xbox-app/xISOBurn/Core/` | Disc detection, reads with retries, error map, copy |
+| `xbox-app/xISOBurn/Spike/` | The feasibility test |
+| `xbox-app/tools/make-assets.ps1` | Builds the package images from `designer.png` |
+| `docs/` | Notes and test results |
+| `.github/workflows/build.yml` | Build and packaging on GitHub Actions |
+| `pc-receiver/` | PC receiver (milestone 3) |
 
-## Origem da técnica de acesso ao drive
+## Output format
 
-A forma de abrir o drive vem da PR #11 do XBSX2,
+The image is a raw, sector-by-sector copy (2048 bytes per sector), identical to a plain ISO. The app
+does **not** decrypt CSS: it only copies what the drive returns. If a drive returns scrambled data
+from an encrypted DVD, the image is only useful to someone who can decrypt it later on the PC (for
+example with MakeMKV). Sectors that can't be read are filled with zeros and listed in the `.map` file
+next to the image.
+
+## How the drive is accessed
+
+The technique comes from XBSX2 PR #11,
 ["UWP/CDVD: Add support for the Xbox disc drive"](https://github.com/XboxEmulationHub/XBSX2/pull/11)
-(arquivo `pcsx2/CDVD/Windows/IOCtlSrcXbox.cpp`). No console, `CreateFile("\\.\X:")` e os
-`IOCTL_CDROM`/`IOCTL_DVD` são bloqueados. O caminho que funciona em Modo Dev é abrir a interface
-CD-ROM como `CustomDevice` e enviar `IOCTL_SCSI_PASS_THROUGH`.
+(file `pcsx2/CDVD/Windows/IOCtlSrcXbox.cpp`). On the console, `CreateFile("\\.\X:")` and the
+`IOCTL_CDROM`/`IOCTL_DVD` requests are blocked. What works in Developer Mode is opening the CD-ROM
+device interface as a `CustomDevice` and sending `IOCTL_SCSI_PASS_THROUGH`.
+
+## Disclaimer
+
+xISOBurn is an independent project and isn't affiliated with or endorsed by Microsoft. Xbox and the
+Xbox logo are trademarks of the Microsoft group of companies. The DVD logo is a trademark of the DVD
+Format/Logo Licensing Corporation. Only copy discs you own and are allowed to back up.

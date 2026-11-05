@@ -15,9 +15,9 @@ namespace xISOBurn.Core
 {
     internal sealed class CopyProgress
     {
-        public long Done;          // setores processados (lidos ou preenchidos com zeros)
-        public long Total;         // setores do trecho
-        public long Bad;           // setores preenchidos com zeros
+        public long Done;          // sectors processed (read or zero-filled)
+        public long Total;         // sectors in the range
+        public long Bad;           // zero-filled sectors
         public long CurrentLba;
         public double BytesPerSecond;
         public TimeSpan Elapsed;
@@ -39,10 +39,10 @@ namespace xISOBurn.Core
     }
 
     /// <summary>
-    /// Marco 2: lê o disco inteiro (ou o trecho configurado) para um arquivo em LocalState.
-    /// Calcula o SHA-256 durante a leitura, sobre exatamente os bytes gravados (incluindo os zeros dos
-    /// setores ruins), e grava o .map e o .sha256 ao lado da imagem.
-    /// Memória: um único buffer de no máximo 64 setores (128 KiB); o disco nunca fica na memória.
+    /// Milestone 2: reads the whole disc (or the configured range) into a file in LocalState.
+    /// Computes SHA-256 while reading, over exactly the bytes written (including the zeros of bad
+    /// sectors), and writes the .map and .sha256 next to the image.
+    /// Memory: a single buffer of at most 64 sectors (128 KiB); the disc is never held in memory.
     /// </summary>
     internal sealed class CopyJob
     {
@@ -72,7 +72,7 @@ namespace xISOBurn.Core
             long total = end - first;
             if (total <= 0)
             {
-                result.Error = "Nada a copiar (início " + first + ", fim " + end + ").";
+                result.Error = "Nothing to copy (start " + first + ", end " + end + ").";
                 return result;
             }
 
@@ -80,10 +80,10 @@ namespace xISOBurn.Core
             string imagePath = Path.Combine(_folder, baseName + ".iso");
             result.MapPath = Path.Combine(_folder, baseName + ".map");
 
-            _log.Section("Cópia");
-            _log.Info("Trecho: LBA " + first + " a " + (end - 1) + " (" + total + " setores, " + DiscProbe.FormatSize(total) + ")");
-            _log.Info("Configuração: " + _cfg.Describe());
-            _log.Info(_cfg.WriteImage ? "Imagem: " + imagePath : "Modo só leitura: a imagem não será gravada.");
+            _log.Section("Copy");
+            _log.Info("Range: LBA " + first + " to " + (end - 1) + " (" + total + " sectors, " + DiscProbe.FormatSize(total) + ")");
+            _log.Info("Settings: " + _cfg.Describe());
+            _log.Info(_cfg.WriteImage ? "Image: " + imagePath : "Read-only mode: the image will not be written.");
 
             var map = new BadSectorMap();
             var reader = new SectorReader(_drive, _cfg, _log);
@@ -101,7 +101,7 @@ namespace xISOBurn.Core
                 if (_cfg.WriteImage)
                 {
                     file = new FileStream(imagePath, FileMode.Create, FileAccess.Write, FileShare.Read, 1 << 20);
-                    // Reserva o tamanho final logo no começo: se faltar espaço, falha agora, e não horas depois.
+                    // Reserve the final size up front: if space runs out, fail now rather than hours later.
                     file.SetLength(total * SectorSize);
                 }
 
@@ -131,7 +131,7 @@ namespace xISOBurn.Core
                     {
                         lastPercentLogged = percent;
                         _log.Info(percent + "% - LBA " + lba + " | " + (speed.BytesPerSecond / 1048576.0).ToString("0.0") +
-                                  " MiB/s | ruins: " + map.TotalSectors + " | " + FormatTime(elapsed));
+                                  " MiB/s | bad: " + map.TotalSectors + " | " + FormatTime(elapsed));
                     }
                 }
 
@@ -141,17 +141,17 @@ namespace xISOBurn.Core
             catch (OperationCanceledException)
             {
                 result.Cancelled = true;
-                _log.Info("Cópia cancelada no LBA " + (first + done) + ".");
+                _log.Info("Copy cancelled at LBA " + (first + done) + ".");
             }
             catch (MediumRemovedException ex)
             {
                 result.Error = ex.Message;
-                _log.Info("PARADA: " + ex.Message);
+                _log.Info("STOPPED: " + ex.Message);
             }
             catch (Exception ex)
             {
                 result.Error = ex.GetType().Name + ": " + ex.Message + " (0x" + ex.HResult.ToString("X8") + ")";
-                _log.Info("ERRO: " + result.Error);
+                _log.Info("ERROR: " + result.Error);
             }
             finally
             {
@@ -159,13 +159,13 @@ namespace xISOBurn.Core
                 {
                     try
                     {
-                        // Se não terminou, corta o arquivo no ponto processado (o resto seria só zeros reservados).
+                        // If it did not finish, cut the file where processing stopped (the rest would only be reserved zeros).
                         if (!result.Completed) file.SetLength(done * SectorSize);
                         file.Dispose();
                     }
                     catch (Exception ex)
                     {
-                        _log.Info("Erro ao fechar a imagem: " + ex.Message);
+                        _log.Info("Error closing the image: " + ex.Message);
                     }
                 }
             }
@@ -176,7 +176,7 @@ namespace xISOBurn.Core
             result.BadSectors = map.TotalSectors;
             result.BadRanges = map.Ranges.Count;
             result.ImagePath = _cfg.WriteImage ? imagePath : null;
-            // O hash cobre exatamente o que foi processado; se a cópia não terminou, é o hash do trecho parcial.
+            // The hash covers exactly what was processed; if the copy did not finish, it is the partial range's hash.
             result.Sha256 = CryptographicBuffer.EncodeToHexString(hash.GetValueAndReset());
 
             try
@@ -189,20 +189,20 @@ namespace xISOBurn.Core
             }
             catch (Exception ex)
             {
-                _log.Info("Erro ao gravar o mapa: " + ex.Message);
+                _log.Info("Error writing the map: " + ex.Message);
             }
 
-            _log.Section("Resultado da cópia");
-            _log.Info(result.Completed ? "Concluída." : result.Cancelled ? "Cancelada." : "Interrompida: " + result.Error);
-            _log.Info("Setores processados: " + done + " de " + total + " em " + FormatTime(result.Elapsed) +
-                      " (média " + (done * (double)SectorSize / 1048576.0 / Math.Max(1, result.Elapsed.TotalSeconds)).ToString("0.0") + " MiB/s)");
-            _log.Info("Comandos de leitura: " + reader.Commands + " | blocos recuperados com nova tentativa: " + reader.RecoveredBlocks +
-                      " | setores recuperados: " + reader.RecoveredSectors);
-            _log.Info("Setores NÃO lidos (zeros): " + map.TotalSectors + " em " + map.Ranges.Count + " intervalo(s)");
+            _log.Section("Copy result");
+            _log.Info(result.Completed ? "Completed." : result.Cancelled ? "Cancelled." : "Stopped: " + result.Error);
+            _log.Info("Sectors processed: " + done + " of " + total + " in " + FormatTime(result.Elapsed) +
+                      " (average " + (done * (double)SectorSize / 1048576.0 / Math.Max(1, result.Elapsed.TotalSeconds)).ToString("0.0") + " MiB/s)");
+            _log.Info("Read commands: " + reader.Commands + " | blocks recovered on retry: " + reader.RecoveredBlocks +
+                      " | sectors recovered: " + reader.RecoveredSectors);
+            _log.Info("Sectors NOT read (zeros): " + map.TotalSectors + " in " + map.Ranges.Count + " range(s)");
             foreach (var r in map.Ranges)
                 _log.Info("  " + r.Start + "-" + r.End + " (" + r.Count + ") " + r.LastError);
-            _log.Info("SHA-256" + (result.Completed ? "" : " (parcial)") + ": " + result.Sha256);
-            _log.Info("Mapa: " + result.MapPath);
+            _log.Info("SHA-256" + (result.Completed ? "" : " (partial)") + ": " + result.Sha256);
+            _log.Info("Map: " + result.MapPath);
             return result;
         }
 
@@ -210,7 +210,7 @@ namespace xISOBurn.Core
         {
             string name = _cfg.OutputName;
             if (string.IsNullOrWhiteSpace(name)) name = _probe.VolumeLabel;
-            if (string.IsNullOrWhiteSpace(name)) name = "disco";
+            if (string.IsNullOrWhiteSpace(name)) name = "disc";
             var sb = new StringBuilder();
             foreach (char c in name.Trim())
                 sb.Append(Array.IndexOf(Path.GetInvalidFileNameChars(), c) >= 0 ? '_' : c);
@@ -232,7 +232,7 @@ namespace xISOBurn.Core
             return ((int)t.TotalHours).ToString("00") + ":" + t.Minutes.ToString("00") + ":" + t.Seconds.ToString("00");
         }
 
-        /// <summary>Velocidade média dos últimos ~15 s (mais estável que a instantânea, mais atual que a média geral).</summary>
+        /// <summary>Average speed over the last ~15 s (steadier than instantaneous, more current than the overall average).</summary>
         private sealed class SpeedMeter
         {
             private readonly Queue<KeyValuePair<TimeSpan, long>> _samples = new Queue<KeyValuePair<TimeSpan, long>>();

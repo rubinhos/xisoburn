@@ -1,9 +1,9 @@
 namespace xISOBurn.Scsi
 {
     /// <summary>
-    /// Dados de "sense" devolvidos pelo drive quando um comando termina com CHECK CONDITION.
-    /// Chave/ASC/ASCQ seguem SPC-4 e MMC-6. A tabela abaixo cobre o que interessa para leitura de
-    /// discos (erros de mídia, disco ausente, proteção CSS/região); o resto aparece só em hexadecimal.
+    /// "Sense" data returned by the drive when a command ends with CHECK CONDITION.
+    /// Key/ASC/ASCQ follow SPC-4 and MMC-6. The table below covers what matters for reading discs
+    /// (medium errors, no disc, CSS/region protection); anything else is shown in hex only.
     /// </summary>
     internal sealed class SenseInfo
     {
@@ -11,21 +11,21 @@ namespace xISOBurn.Scsi
         public byte Asc;
         public byte Ascq;
 
-        /// <summary>Obtido com REQUEST SENSE depois da falha (o driver não trouxe o sense junto).</summary>
+        /// <summary>Obtained with REQUEST SENSE after the failure (the driver did not return it).</summary>
         public bool FromRequestSense;
 
         public string Code { get { return Key.ToString("X2") + "/" + Asc.ToString("X2") + "/" + Ascq.ToString("X2"); } }
 
-        /// <summary>02/3A/xx: sem disco no drive. Não é setor ruim; a cópia precisa parar.</summary>
+        /// <summary>02/3A/xx: no disc in the drive. Not a bad sector; the copy has to stop.</summary>
         public bool IsNoMedium { get { return Key == 0x02 && Asc == 0x3A; } }
 
-        /// <summary>05/21/00: LBA fora do disco.</summary>
+        /// <summary>05/21/00: LBA past the end of the disc.</summary>
         public bool IsOutOfRange { get { return Key == 0x05 && Asc == 0x21; } }
 
-        /// <summary>Erro de mídia (chave 3): setor ruim de verdade.</summary>
+        /// <summary>Medium error (key 3): a genuinely bad sector.</summary>
         public bool IsMediumError { get { return Key == 0x03; } }
 
-        /// <summary>05/6F/xx: problemas de autenticação CSS / região (não é defeito físico do disco).</summary>
+        /// <summary>05/6F/xx: CSS authentication / region problems (not a physical defect of the disc).</summary>
         public bool IsCopyProtection { get { return Key == 0x05 && Asc == 0x6F; } }
 
         public static SenseInfo Parse(byte[] sense, int length)
@@ -35,14 +35,14 @@ namespace xISOBurn.Scsi
             var s = new SenseInfo();
             if (responseCode == 0x70 || responseCode == 0x71)
             {
-                // Formato fixo: chave no byte 2, ASC/ASCQ nos bytes 12/13.
+                // Fixed format: key in byte 2, ASC/ASCQ in bytes 12/13.
                 s.Key = (byte)(sense[2] & 0x0F);
                 s.Asc = length > 12 ? sense[12] : (byte)0;
                 s.Ascq = length > 13 ? sense[13] : (byte)0;
             }
             else if (responseCode == 0x72 || responseCode == 0x73)
             {
-                // Formato descritor: chave/ASC/ASCQ nos bytes 1/2/3.
+                // Descriptor format: key/ASC/ASCQ in bytes 1/2/3.
                 s.Key = (byte)(sense[1] & 0x0F);
                 s.Asc = sense[2];
                 s.Ascq = length > 3 ? sense[3] : (byte)0;
@@ -63,9 +63,9 @@ namespace xISOBurn.Scsi
         {
             switch ((Asc << 8) | Ascq)
             {
-                case 0x0401: return "NOT READY: BECOMING READY (disco girando)";
+                case 0x0401: return "NOT READY: BECOMING READY (disc spinning up)";
                 case 0x0402: return "NOT READY: INITIALIZING COMMAND REQUIRED";
-                case 0x3A00: return "MEDIUM NOT PRESENT (sem disco)";
+                case 0x3A00: return "MEDIUM NOT PRESENT (no disc)";
                 case 0x3A01: return "MEDIUM NOT PRESENT - TRAY CLOSED";
                 case 0x3A02: return "MEDIUM NOT PRESENT - TRAY OPEN";
                 case 0x1100: return "UNRECOVERED READ ERROR";
@@ -89,7 +89,7 @@ namespace xISOBurn.Scsi
                 case 0x6F03: return "READ OF SCRAMBLED SECTOR WITHOUT AUTHENTICATION (CSS)";
                 case 0x6F04: return "MEDIA REGION CODE IS MISMATCHED TO LOGICAL UNIT REGION";
                 case 0x6F05: return "DRIVE REGION MUST BE PERMANENT/REGION RESET COUNT ERROR";
-                case 0x2800: return "UNIT ATTENTION: NOT READY TO READY CHANGE (disco trocado?)";
+                case 0x2800: return "UNIT ATTENTION: NOT READY TO READY CHANGE (disc changed?)";
                 case 0x2900: return "UNIT ATTENTION: POWER ON / RESET";
                 case 0x5A01: return "OPERATOR MEDIUM REMOVAL REQUEST";
             }
@@ -103,7 +103,7 @@ namespace xISOBurn.Scsi
                 case 0x5: return "ILLEGAL REQUEST";
                 case 0x6: return "UNIT ATTENTION";
                 case 0xB: return "ABORTED COMMAND";
-                default: return "chave " + Key.ToString("X");
+                default: return "key " + Key.ToString("X");
             }
         }
     }

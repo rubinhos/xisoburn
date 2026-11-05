@@ -5,7 +5,7 @@ namespace xISOBurn.Util
 {
     internal static class HexDump
     {
-        /// <summary>Linhas no formato "00000000  xx xx ... xx  |ascii...........|".</summary>
+        /// <summary>Lines formatted as "00000000  xx xx ... xx  |ascii...........|".</summary>
         public static IEnumerable<string> Lines(byte[] data, int offset, int length, long baseAddress)
         {
             for (int row = 0; row < length; row += 16)

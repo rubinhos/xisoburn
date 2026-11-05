@@ -3,34 +3,34 @@ using xISOBurn.Util;
 namespace xISOBurn.Scsi
 {
     /// <summary>
-    /// Montagem dos CDBs (Command Descriptor Blocks). Todos os campos multibyte são big-endian.
-    /// Referências: SPC-4 (INQUIRY, TEST UNIT READY), SBC/MMC-6 (READ CAPACITY, READ(10),
-    /// GET CONFIGURATION, READ DVD STRUCTURE, REPORT KEY, READ TOC).
+    /// CDB (Command Descriptor Block) builders. All multi-byte fields are big-endian.
+    /// References: SPC-4 (INQUIRY, TEST UNIT READY, REQUEST SENSE), SBC/MMC-6 (READ CAPACITY,
+    /// READ(10), GET CONFIGURATION, READ DVD STRUCTURE, REPORT KEY, READ TOC).
     /// </summary>
     internal static class ScsiCommands
     {
-        /// <summary>TEST UNIT READY (0x00): sem dados; GOOD = disco pronto.</summary>
+        /// <summary>TEST UNIT READY (0x00): no data; GOOD = disc ready.</summary>
         public static byte[] TestUnitReady()
         {
             return new byte[6];
         }
 
-        /// <summary>REQUEST SENSE (0x03): pede o sense do último erro, quando o driver não o devolveu.</summary>
+        /// <summary>REQUEST SENSE (0x03): asks for the sense of the last error when the driver did not return it.</summary>
         public static byte[] RequestSense(byte allocationLength)
         {
             return new byte[] { 0x03, 0, 0, 0, allocationLength, 0 };
         }
 
-        /// <summary>INQUIRY (0x12): fabricante, modelo e firmware do drive.</summary>
+        /// <summary>INQUIRY (0x12): drive vendor, model and firmware.</summary>
         public static byte[] Inquiry(byte allocationLength)
         {
             return new byte[] { 0x12, 0, 0, 0, allocationLength, 0 };
         }
 
         /// <summary>
-        /// READ CAPACITY(10) (0x25): devolve o ÚLTIMO LBA (não a contagem) e o tamanho do bloco.
-        /// Setores = último LBA + 1. Em DVD dupla camada OTP o LBA é contínuo entre as camadas,
-        /// então o valor já cobre as duas (a conferir no spike contra READ DVD STRUCTURE).
+        /// READ CAPACITY(10) (0x25): returns the LAST LBA (not the count) and the block size.
+        /// Sectors = last LBA + 1. Warning: on the Xbox drive (PLDS DG-6M5S) this was WRONG for an OTP
+        /// dual-layer DVD ("end - start + 1" of the physical sector numbers); see docs/spike.md.
         /// </summary>
         public static byte[] ReadCapacity10()
         {
@@ -38,8 +38,8 @@ namespace xISOBurn.Scsi
         }
 
         /// <summary>
-        /// GET CONFIGURATION (0x46), RT=0, a partir da feature 0. Os bytes 6-7 do cabeçalho trazem o
-        /// "perfil atual", que identifica a mídia (CD-ROM, DVD-ROM, BD-ROM...).
+        /// GET CONFIGURATION (0x46), RT=0, starting at feature 0. Bytes 6-7 of the header hold the
+        /// "current profile", which identifies the media (CD-ROM, DVD-ROM, BD-ROM...).
         /// </summary>
         public static byte[] GetConfiguration(int allocationLength)
         {
@@ -50,8 +50,8 @@ namespace xISOBurn.Scsi
         }
 
         /// <summary>
-        /// READ(10) (0x28): lê 'count' setores de 2048 bytes a partir de 'lba'.
-        /// Mesmo CDB do XBSX2 (DPO/FUA = 0: o drive pode usar o cache dele).
+        /// READ(10) (0x28): reads 'count' 2048-byte sectors starting at 'lba'.
+        /// Same CDB as XBSX2 (DPO/FUA = 0: the drive may use its own cache).
         /// </summary>
         public static byte[] Read10(uint lba, int count)
         {
@@ -63,10 +63,10 @@ namespace xISOBurn.Scsi
         }
 
         /// <summary>
-        /// READ DVD STRUCTURE (0xAD), mídia tipo 0 (DVD).
-        ///   formato 0x00 = Physical Format Information (tipo de livro, camadas, setores);
-        ///   formato 0x01 = Copyright Information (sistema de proteção e região do disco).
-        /// O formato 0x02 (Disc Key) exige autenticação CSS e NÃO é usado.
+        /// READ DVD STRUCTURE (0xAD), media type 0 (DVD).
+        ///   format 0x00 = Physical Format Information (book type, layers, sectors);
+        ///   format 0x01 = Copyright Information (protection system and disc regions).
+        /// Format 0x02 (Disc Key) requires CSS authentication and is NOT used.
         /// </summary>
         public static byte[] ReadDvdStructure(byte layer, byte format, int allocationLength)
         {
@@ -79,8 +79,8 @@ namespace xISOBurn.Scsi
         }
 
         /// <summary>
-        /// REPORT KEY (0xA4) com KEY FORMAT 0x08 = "RPC State": só informa a região configurada no
-        /// drive e quantas trocas restam. Não participa de autenticação CSS e não altera nada.
+        /// REPORT KEY (0xA4) with KEY FORMAT 0x08 = "RPC State": only reports the region set in the
+        /// drive and how many changes remain. Takes no part in CSS authentication and changes nothing.
         /// </summary>
         public static byte[] ReportKeyRpcState()
         {
@@ -91,7 +91,7 @@ namespace xISOBurn.Scsi
             return cdb;
         }
 
-        /// <summary>READ TOC/PMA/ATIP (0x43), formato 0 (TOC), endereços em LBA. Só para CDs.</summary>
+        /// <summary>READ TOC/PMA/ATIP (0x43), format 0 (TOC), LBA addresses. CDs only.</summary>
         public static byte[] ReadToc(int allocationLength)
         {
             var cdb = new byte[10];

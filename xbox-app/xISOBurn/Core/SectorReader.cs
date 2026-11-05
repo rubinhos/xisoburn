@@ -7,7 +7,7 @@ using xISOBurn.Util;
 
 namespace xISOBurn.Core
 {
-    /// <summary>Sem disco no drive (02/3A): a cópia para; não é um setor ruim.</summary>
+    /// <summary>No disc in the drive (02/3A): the copy stops; this is not a bad sector.</summary>
     internal sealed class MediumRemovedException : Exception
     {
         public MediumRemovedException(string message) : base(message) { }
@@ -20,11 +20,11 @@ namespace xISOBurn.Core
     }
 
     /// <summary>
-    /// Leitura de um bloco com recuperação de erros:
-    ///   1. lê o bloco inteiro; se falhar, tenta de novo BlockRetries vezes;
-    ///   2. se continuar falhando, lê setor a setor, com 1 + SectorRetries tentativas cada;
-    ///   3. setor que não ler fica com zeros no buffer e vai para a lista devolvida (mapa de erros).
-    /// Nunca lança exceção por setor ruim. Só para se o disco sair do drive ou se a cópia for cancelada.
+    /// Reads one block with error recovery:
+    ///   1. read the whole block; if it fails, try again BlockRetries times;
+    ///   2. if it keeps failing, read sector by sector, with 1 + SectorRetries attempts each;
+    ///   3. a sector that does not read is zero-filled in the buffer and returned in the list (error map).
+    /// Never throws because of a bad sector. It only stops if the disc leaves the drive or the copy is cancelled.
     /// </summary>
     internal sealed class SectorReader
     {
@@ -62,15 +62,15 @@ namespace xISOBurn.Core
                     if (attempt > 1)
                     {
                         RecoveredBlocks++;
-                        _log.Info("Bloco " + range + " lido na tentativa " + attempt + ".");
+                        _log.Info("Block " + range + " read on attempt " + attempt + ".");
                     }
                     return NoFailures;
                 }
                 ThrowIfFatal(r);
-                _log.Info("Bloco " + range + ": tentativa " + attempt + "/" + blockAttempts + " falhou: " + r.Describe());
+                _log.Info("Block " + range + ": attempt " + attempt + "/" + blockAttempts + " failed: " + r.Describe());
             }
 
-            _log.Info("Bloco " + range + ": lendo setor a setor.");
+            _log.Info("Block " + range + ": reading sector by sector.");
             var failed = new List<FailedSector>();
             int sectorAttempts = 1 + _cfg.SectorRetries;
             for (int i = 0; i < count; i++)
@@ -89,7 +89,7 @@ namespace xISOBurn.Core
                         if (attempt > 1)
                         {
                             RecoveredSectors++;
-                            _log.Info("Setor " + s + " lido na tentativa " + attempt + ".");
+                            _log.Info("Sector " + s + " read on attempt " + attempt + ".");
                         }
                         break;
                     }
@@ -97,11 +97,11 @@ namespace xISOBurn.Core
                 }
                 if (!ok)
                 {
-                    // Zeros no lugar do setor: a imagem mantém o tamanho e os offsets certos.
+                    // Zeros in place of the sector: the image keeps its size and the offsets stay right.
                     Array.Clear(buffer, i * SectorSize, SectorSize);
                     string error = last.Sense != null ? last.Sense.Code + " " + last.Sense.Describe() : last.Describe();
                     failed.Add(new FailedSector { Lba = s, Error = error });
-                    _log.Info("Setor " + s + " ILEGÍVEL após " + sectorAttempts + " tentativas: " + last.Describe() + " -> zeros");
+                    _log.Info("Sector " + s + " UNREADABLE after " + sectorAttempts + " attempts: " + last.Describe() + " -> zeros");
                 }
             }
             return failed;
@@ -110,7 +110,7 @@ namespace xISOBurn.Core
         private static void ThrowIfFatal(ScsiResult r)
         {
             if (r.Sense != null && r.Sense.IsNoMedium)
-                throw new MediumRemovedException("Disco removido ou drive sem mídia: " + r.Sense);
+                throw new MediumRemovedException("Disc removed or no media in the drive: " + r.Sense);
         }
     }
 }

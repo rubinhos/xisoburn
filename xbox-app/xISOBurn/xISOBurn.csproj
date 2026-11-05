@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Projeto UWP "clássico" (C# + .NET Native), o formato mais testado no Xbox em Modo Desenvolvedor.
-  Compilado no GitHub Actions (.github/workflows/build.yml); também abre no Visual Studio 2022
-  com a carga "Desenvolvimento para a Plataforma Universal do Windows".
+  "Classic" UWP project (C# + .NET Native), the most proven format on Xbox in Developer Mode.
+  Built by GitHub Actions (.github/workflows/build.yml); it also opens in Visual Studio 2022
+  with the "Universal Windows Platform development" workload.
 -->
 <Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
@@ -14,7 +14,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>xISOBurn</RootNamespace>
     <AssemblyName>xISOBurn</AssemblyName>
-    <DefaultLanguage>pt-BR</DefaultLanguage>
+    <DefaultLanguage>en-US</DefaultLanguage>
     <TargetPlatformIdentifier>UAP</TargetPlatformIdentifier>
     <TargetPlatformVersion Condition=" '$(TargetPlatformVersion)' == '' ">10.0.26100.0</TargetPlatformVersion>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
@@ -22,7 +22,7 @@
     <FileAlignment>512</FileAlignment>
     <ProjectTypeGuids>{A5A43C5B-DE2A-4C0C-9213-0A381AF9435A};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
     <WindowsXamlEnableOverview>true</WindowsXamlEnableOverview>
-    <!-- Empacotamento para sideload (Device Portal / Visual Studio). Sem bundle: só x64. -->
+    <!-- Sideload packaging (Device Portal / Visual Studio). No bundle: x64 only. -->
     <AppxPackageSigningEnabled>False</AppxPackageSigningEnabled>
     <AppxBundle>Never</AppxBundle>
     <AppxBundlePlatforms>x64</AppxBundlePlatforms>
@@ -88,11 +88,8 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="Properties\Default.rd.xml" />
-    <Content Include="Assets\SplashScreen.png" />
-    <Content Include="Assets\Square150x150Logo.png" />
-    <Content Include="Assets\Square44x44Logo.png" />
-    <Content Include="Assets\StoreLogo.png" />
-    <Content Include="Assets\Wide310x150Logo.png" />
+    <!-- Generated from designer.png by xbox-app\tools\make-assets.ps1. -->
+    <Content Include="Assets\*.png" />
   </ItemGroup>
   <ItemGroup>
     <ApplicationDefinition Include="App.xaml">

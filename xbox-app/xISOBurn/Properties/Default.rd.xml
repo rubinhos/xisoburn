@@ -1,5 +1,5 @@
 <!--
-  Diretivas de runtime para o .NET Native (padrão do template UWP).
+  Runtime directives for .NET Native (UWP template default).
 -->
 <Directives xmlns="http://schemas.microsoft.com/netfx/2013/01/metadata">
   <Application>

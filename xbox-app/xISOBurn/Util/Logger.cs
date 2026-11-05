@@ -5,8 +5,8 @@ using System.Text;
 namespace xISOBurn.Util
 {
     /// <summary>
-    /// Log em arquivo (LocalState) e, opcionalmente, na tela.
-    /// O arquivo fica em LocalAppData\xISOBurn_...\LocalState e pode ser baixado pelo Device Portal.
+    /// Log to a file (LocalState) and, optionally, to the screen.
+    /// The file lives in LocalAppData\xISOBurn_...\LocalState and can be downloaded from the Device Portal.
     /// </summary>
     internal sealed class Logger : IDisposable
     {

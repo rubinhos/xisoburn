@@ -2,14 +2,14 @@ using xISOBurn.Util;
 
 namespace xISOBurn.Scsi
 {
-    /// <summary>Nomes dos perfis MMC (GET CONFIGURATION, "current profile").</summary>
+    /// <summary>MMC profile names (GET CONFIGURATION, "current profile").</summary>
     internal static class MmcProfiles
     {
         public static string Name(int profile)
         {
             switch (profile)
             {
-                case 0x0000: return "nenhum (sem disco?)";
+                case 0x0000: return "none (no disc?)";
                 case 0x0008: return "CD-ROM";
                 case 0x0009: return "CD-R";
                 case 0x000A: return "CD-RW";
@@ -17,8 +17,8 @@ namespace xISOBurn.Scsi
                 case 0x0011: return "DVD-R";
                 case 0x0012: return "DVD-RAM";
                 case 0x0013: return "DVD-RW (restricted overwrite)";
-                case 0x0014: return "DVD-RW (sequencial)";
-                case 0x0015: return "DVD-R DL (sequencial)";
+                case 0x0014: return "DVD-RW (sequential)";
+                case 0x0015: return "DVD-R DL (sequential)";
                 case 0x0016: return "DVD-R DL (jump)";
                 case 0x001A: return "DVD+RW";
                 case 0x001B: return "DVD+R";
@@ -29,7 +29,7 @@ namespace xISOBurn.Scsi
                 case 0x0042: return "BD-R RRM";
                 case 0x0043: return "BD-RE";
                 case 0x0050: return "HD DVD-ROM";
-                default: return "desconhecido";
+                default: return "unknown";
             }
         }
 
@@ -39,16 +39,16 @@ namespace xISOBurn.Scsi
     }
 
     /// <summary>
-    /// Physical Format Information do DVD (READ DVD STRUCTURE formato 0), conforme MMC-6 / ECMA-267.
-    /// O descritor começa no byte 4 da resposta (depois do cabeçalho de 4 bytes).
-    /// Os endereços aqui são números de setor FÍSICOS (DVD-ROM começa em 0x30000), não LBAs.
+    /// DVD Physical Format Information (READ DVD STRUCTURE format 0), per MMC-6 / ECMA-267.
+    /// The descriptor starts at byte 4 of the response (after the 4-byte header).
+    /// Addresses here are PHYSICAL sector numbers (DVD-ROM starts at 0x30000), not LBAs.
     /// </summary>
     internal sealed class DvdPhysicalFormat
     {
         public int BookType, PartVersion, DiscSize, MaxRate;
-        public int NumberOfLayers;   // 1 ou 2
-        public bool OppositeTrackPath; // true = OTP (comum em filmes DL), false = PTP
-        public int LayerType;        // bit0 gravado (ROM), bit1 gravável, bit2 regravável
+        public int NumberOfLayers;     // 1 or 2
+        public bool OppositeTrackPath; // true = OTP (common on DL movies), false = PTP
+        public int LayerType;          // bit0 embossed (ROM), bit1 recordable, bit2 rewritable
         public uint StartSector, EndSector, EndSectorLayer0;
         public bool Bca;
 
@@ -61,10 +61,10 @@ namespace xISOBurn.Scsi
             p.PartVersion = r[d] & 0x0F;
             p.DiscSize = r[d + 1] >> 4;
             p.MaxRate = r[d + 1] & 0x0F;
-            p.NumberOfLayers = ((r[d + 2] >> 5) & 0x03) + 1; // campo guarda "camadas - 1"
+            p.NumberOfLayers = ((r[d + 2] >> 5) & 0x03) + 1; // the field stores "layers - 1"
             p.OppositeTrackPath = ((r[d + 2] >> 4) & 1) == 1;
             p.LayerType = r[d + 2] & 0x0F;
-            // Os campos de setor têm 4 bytes, mas só 24 bits são válidos (o XBSX2 também mascara).
+            // Sector fields are 4 bytes wide but only 24 bits are valid (XBSX2 masks them too).
             p.StartSector = Bytes.BE32(r, d + 4) & 0xFFFFFF;
             p.EndSector = Bytes.BE32(r, d + 8) & 0xFFFFFF;
             p.EndSectorLayer0 = Bytes.BE32(r, d + 12) & 0xFFFFFF;
@@ -72,7 +72,7 @@ namespace xISOBurn.Scsi
             return p;
         }
 
-        /// <summary>Setores da camada 0 (para OTP); é onde fica a transição de camada em LBA.</summary>
+        /// <summary>Sectors in layer 0 (for OTP); this is where the layer change happens in LBA terms.</summary>
         public long Layer0Sectors
         {
             get
@@ -83,11 +83,11 @@ namespace xISOBurn.Scsi
         }
 
         /// <summary>
-        /// Total de setores de dados segundo esta estrutura.
-        /// OTP: a camada 1 usa números de setor complementados (bit a bit) em relação à camada 0 no
-        /// mesmo raio. Ela começa em ~EndSectorLayer0 e termina em EndSector. Então:
+        /// Total data sectors according to this structure.
+        /// OTP: layer 1 uses sector numbers that are the bitwise complement of layer 0 at the same radius.
+        /// It starts at ~EndSectorLayer0 and ends at EndSector. Therefore:
         ///   total = (EndL0 - Start + 1) + (End - (~EndL0 &amp; 0xFFFFFF) + 1)
-        /// PTP dupla camada: cada camada é descrita separadamente (somar camada 0 e camada 1).
+        /// PTP dual layer: each layer is described separately (add layer 0 and layer 1).
         /// </summary>
         public long TotalSectors
         {
@@ -116,7 +116,7 @@ namespace xISOBurn.Scsi
                     case 10: return "DVD+R";
                     case 13: return "DVD+RW DL";
                     case 14: return "DVD+R DL";
-                    default: return "tipo " + BookType;
+                    default: return "type " + BookType;
                 }
             }
         }
@@ -127,13 +127,13 @@ namespace xISOBurn.Scsi
             {
                 switch (MaxRate)
                 {
-                    case 0: return "2,52 Mbps";
-                    case 1: return "5,04 Mbps";
-                    case 2: return "10,08 Mbps";
-                    case 3: return "20,16 Mbps";
-                    case 4: return "30,24 Mbps";
-                    case 15: return "não especificada";
-                    default: return "código " + MaxRate;
+                    case 0: return "2.52 Mbps";
+                    case 1: return "5.04 Mbps";
+                    case 2: return "10.08 Mbps";
+                    case 3: return "20.16 Mbps";
+                    case 4: return "30.24 Mbps";
+                    case 15: return "not specified";
+                    default: return "code " + MaxRate;
                 }
             }
         }

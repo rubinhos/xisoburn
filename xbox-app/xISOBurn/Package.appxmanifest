@@ -6,9 +6,9 @@
   IgnorableNamespaces="uap mp">
 
   <!--
-    Publisher precisa ser idêntico ao "Subject" do certificado que assina o pacote.
-    O workflow do GitHub gera um certificado autoassinado com CN=xISOBurn.
-    A versão é reescrita pelo workflow (0.1.<número do build>.0).
+    Publisher must be identical to the Subject of the certificate that signs the package.
+    The GitHub workflow generates a self-signed certificate with CN=xISOBurn.
+    The version is rewritten by the workflow (0.1.<build number>.0).
   -->
   <Identity
     Name="xISOBurn"
@@ -35,25 +35,30 @@
     <Application Id="App"
       Executable="$targetnametoken$.exe"
       EntryPoint="xISOBurn.App">
+      <!--
+        Image paths have no scale qualifier: the resource system picks the
+        .scale-100 / .scale-200 / .targetsize-* file that fits the screen.
+        Black background to match the artwork (designer.png).
+      -->
       <uap:VisualElements
         DisplayName="xISOBurn"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png"
-        Description="Copia o disco do drive do Xbox para uma ISO no PC"
-        BackgroundColor="#1E1E1E">
+        Description="Copies the disc in the Xbox drive to an ISO image on your PC"
+        BackgroundColor="#000000">
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png"/>
-        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#1E1E1E"/>
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#000000"/>
       </uap:VisualElements>
     </Application>
   </Applications>
 
   <Capabilities>
     <!--
-      As duas capacidades abaixo vêm do Package.appxmanifest do XBSX2 (PR #11):
-      - "optical": capacidade de dispositivo para o drive óptico;
-      - 53f56308-b6bf-11d0-94f2-00a0c91efb8b: GUID da classe de interface CD-ROM
-        (GUID_DEVINTERFACE_CDROM), exigida para Windows.Devices.Custom abrir a interface.
-      A capacidade de rede (privateNetworkClientServer) entra no Marco 3.
+      Both capabilities below come from the XBSX2 Package.appxmanifest (PR #11):
+      - "optical": device capability for the optical drive;
+      - 53f56308-b6bf-11d0-94f2-00a0c91efb8b: the CD-ROM device interface class GUID
+        (GUID_DEVINTERFACE_CDROM), required for Windows.Devices.Custom to open the interface.
+      The network capability (privateNetworkClientServer) comes in milestone 3.
     -->
     <DeviceCapability Name="optical" />
     <DeviceCapability Name="53f56308-b6bf-11d0-94f2-00a0c91efb8b" />

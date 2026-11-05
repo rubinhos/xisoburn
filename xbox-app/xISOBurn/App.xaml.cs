@@ -9,8 +9,8 @@ namespace xISOBurn
         public App()
         {
             InitializeComponent();
-            // No Xbox, apps UWP começam em "modo mouse" (cursor controlado pelo analógico).
-            // WhenRequested desliga isso: a navegação fica por foco (direcional + A/B).
+            // On Xbox, UWP apps start in "mouse mode" (a cursor driven by the thumbstick).
+            // WhenRequested turns that off: navigation is by focus (D-pad + A/B).
             RequiresPointerMode = ApplicationRequiresPointerMode.WhenRequested;
         }
 
