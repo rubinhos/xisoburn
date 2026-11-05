@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  IgnorableNamespaces="uap mp">
+
+  <!--
+    Publisher precisa ser idêntico ao "Subject" do certificado que assina o pacote.
+    O workflow do GitHub gera um certificado autoassinado com CN=xISOBurn.
+    A versão é reescrita pelo workflow (0.1.<número do build>.0).
+  -->
+  <Identity
+    Name="xISOBurn"
+    Publisher="CN=xISOBurn"
+    Version="0.1.0.0" />
+
+  <mp:PhoneIdentity PhoneProductId="6e1b7c2a-4f3d-4b8e-9a51-2c7d8e0f1a3b" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
+
+  <Properties>
+    <DisplayName>xISOBurn</DisplayName>
+    <PublisherDisplayName>xISOBurn</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="x-generate"/>
+  </Resources>
+
+  <Applications>
+    <Application Id="App"
+      Executable="$targetnametoken$.exe"
+      EntryPoint="xISOBurn.App">
+      <uap:VisualElements
+        DisplayName="xISOBurn"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"
+        Description="Copia o disco do drive do Xbox para uma ISO no PC"
+        BackgroundColor="#1E1E1E">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png"/>
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#1E1E1E"/>
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!--
+      As duas capacidades abaixo vêm do Package.appxmanifest do XBSX2 (PR #11):
+      - "optical": capacidade de dispositivo para o drive óptico;
+      - 53f56308-b6bf-11d0-94f2-00a0c91efb8b: GUID da classe de interface CD-ROM
+        (GUID_DEVINTERFACE_CDROM), exigida para Windows.Devices.Custom abrir a interface.
+      A capacidade de rede (privateNetworkClientServer) entra no Marco 3.
+    -->
+    <DeviceCapability Name="optical" />
+    <DeviceCapability Name="53f56308-b6bf-11d0-94f2-00a0c91efb8b" />
+  </Capabilities>
+</Package>

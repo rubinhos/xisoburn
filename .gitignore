@@ -1,0 +1,15 @@
+# Build do UWP
+xbox-app/**/bin/
+xbox-app/**/obj/
+xbox-app/**/AppPackages/
+xbox-app/**/BundleArtifacts/
+*.user
+.vs/
+
+# Certificados de assinatura: NUNCA versionar a chave privada
+*.pfx
+
+# Saída do workflow / testes locais
+out/
+*.iso
+*.bin
