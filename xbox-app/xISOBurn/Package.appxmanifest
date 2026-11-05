@@ -46,8 +46,9 @@
         Square44x44Logo="Assets\Square44x44Logo.png"
         Description="Copies the disc in the Xbox drive to an ISO image on your PC"
         BackgroundColor="#000000">
-        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png"/>
-        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#000000"/>
+        <!-- JPEG on black: as PNG the logo's glow exceeds the 200 KB limit per manifest image (APPX3207). -->
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.jpg"/>
+        <uap:SplashScreen Image="Assets\SplashScreen.jpg" BackgroundColor="#000000"/>
       </uap:VisualElements>
     </Application>
   </Applications>

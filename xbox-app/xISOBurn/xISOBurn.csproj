@@ -90,6 +90,7 @@
     <Content Include="Properties\Default.rd.xml" />
     <!-- Generated from designer.png by xbox-app\tools\make-assets.ps1. -->
     <Content Include="Assets\*.png" />
+    <Content Include="Assets\*.jpg" />
   </ItemGroup>
   <ItemGroup>
     <ApplicationDefinition Include="App.xaml">
