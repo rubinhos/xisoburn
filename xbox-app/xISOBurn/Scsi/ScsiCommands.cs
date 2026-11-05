@@ -15,6 +15,12 @@ namespace xISOBurn.Scsi
             return new byte[6];
         }
 
+        /// <summary>REQUEST SENSE (0x03): pede o sense do último erro, quando o driver não o devolveu.</summary>
+        public static byte[] RequestSense(byte allocationLength)
+        {
+            return new byte[] { 0x03, 0, 0, 0, allocationLength, 0 };
+        }
+
         /// <summary>INQUIRY (0x12): fabricante, modelo e firmware do drive.</summary>
         public static byte[] Inquiry(byte allocationLength)
         {

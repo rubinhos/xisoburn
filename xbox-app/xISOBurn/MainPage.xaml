@@ -6,31 +6,52 @@
     Background="#1E1E1E">
 
     <!-- Margens dentro da "área segura" de TV (o Xbox já reserva a borda; isto só dá respiro). -->
-    <Grid Padding="48,24,48,24">
+    <Grid Padding="48,24,48,24" RowSpacing="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+        <StackPanel Grid.Row="0">
             <TextBlock Text="xISOBurn" FontSize="36" FontWeight="SemiBold"/>
-            <TextBlock Text="Marco 1 — teste de viabilidade do drive (somente leitura, sem rede)"
+            <TextBlock Text="Marco 2 — cópia do disco para um arquivo local (LocalState), sem rede"
                        FontSize="18" Opacity="0.8"/>
         </StackPanel>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
-            <Button x:Name="RunButton" Content="Executar teste (A)" Click="RunButton_Click"
-                    FontSize="20" Padding="24,10"/>
-            <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="24,0,0,0"
-                       FontSize="18" TextWrapping="Wrap" MaxWidth="1100"/>
+        <!-- Navegação só com controle: direcional entre os botões, A aciona, B cancela a cópia. -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12">
+            <Button x:Name="DetectButton" Content="Detectar disco" Click="DetectButton_Click" FontSize="20" Padding="20,10"/>
+            <Button x:Name="CopyButton" Content="Copiar para LocalState" Click="CopyButton_Click" FontSize="20" Padding="20,10"/>
+            <Button x:Name="CancelButton" Content="Cancelar (B)" Click="CancelButton_Click" FontSize="20" Padding="20,10" IsEnabled="False"/>
+            <Button x:Name="SpikeButton" Content="Teste de viabilidade" Click="SpikeButton_Click" FontSize="20" Padding="20,10"/>
         </StackPanel>
 
-        <!--
-          Log em ListView: cada linha recebe foco, então o direcional rola a lista no controle.
-          Fonte monoespaçada para o hexdump.
-        -->
-        <ListView x:Name="LogList" Grid.Row="2" SelectionMode="None" IsItemClickEnabled="False"
+        <Grid Grid.Row="2" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Background="#262626" Padding="16,12" CornerRadius="4">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Disco" FontSize="20" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="DiscText" Text="Pressione &quot;Detectar disco&quot;." FontSize="16" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Background="#262626" Padding="16,12" CornerRadius="4">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Progresso" FontSize="20" FontWeight="SemiBold"/>
+                    <ProgressBar x:Name="Bar" Minimum="0" Maximum="100" Value="0" Height="12"/>
+                    <TextBlock x:Name="ProgressText" Text="-" FontSize="16" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="ConfigText" FontSize="13" Opacity="0.7" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Log em ListView: cada linha recebe foco, então o direcional rola a lista no controle. -->
+        <ListView x:Name="LogList" Grid.Row="3" SelectionMode="None" IsItemClickEnabled="False"
                   BorderThickness="1" BorderBrush="#444444" Background="#141414">
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
@@ -44,5 +65,7 @@
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>
+
+        <TextBlock x:Name="StatusText" Grid.Row="4" FontSize="16" TextWrapping="Wrap" Opacity="0.9"/>
     </Grid>
 </Page>

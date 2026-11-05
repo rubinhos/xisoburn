@@ -80,6 +80,30 @@ Me mande o log (ou pelo menos o RESUMO).
   de vídeo. Sem isso, o vídeo inteiro sairia como "setor ruim". Antes do Marco 2 precisamos decidir
   juntos o que fazer.
 
-## 6. Resultados (preencher depois do teste)
+## 6. Resultados (05/11/2026, Xbox Series X, build 0.1.2.0, DVD "ACQUARIA")
 
-_Anotações do teste no console vão aqui._
+Os logs completos estão em `spike-20261105-121317.log` (execução completa) e `spike-20261105-121301.log`
+(execução interrompida no meio das amostras).
+
+| # | Resultado |
+|---|-----------|
+| 1 | **Funciona.** Uma interface, `\\?\SCSI#CdRom&Ven_PLDS&Prod_DG-6M5S#...`, nome "XBOX". O `CustomDevice` abre com só as duas `DeviceCapability` da PR. |
+| 2 | Código IOCTL `0x0004D004`, como esperado. |
+| 3 | Drive **PLDS DG-6M5S**, firmware **014R**. |
+| 4 | Perfil `0x0010` (DVD-ROM). |
+| 5 | **DVD-9: 2 camadas, OTP.** Setor físico inicial `0x030000`, final `0xF635C6`, fim da camada 0 `0x1FB52F`. Camada 0 = 1.881.392 setores, camada 1 = 1.436.407 setores, **total 3.317.799 setores (6.794.852.352 bytes)**. O total bate exatamente com o tamanho do volume ISO9660. **READ CAPACITY devolve 15.939.015**, que é `final − inicial + 1` ignorando o OTP: o valor está **errado** para esse disco. Pedir a estrutura da camada 1 devolve `05/24/00` (normal em OTP: só a camada 0 tem descritor). |
+| 6 | **Sem proteção (CPST = 0, sem CSS).** Regiões do disco: 1 e 4. |
+| 7 | Drive na região 1 (RPC Phase II, 4 trocas restantes). Isso não importa para este disco, porque sem CSS o drive não aplica região. |
+| 8 | 16, 31, 32, 48 e **64** setores por comando funcionam, e o conteúdo confere com leituras de 16. |
+| 9 | Os setores 0–999 leem sem erro. A estrutura é ISO9660 ("ACQUARIA") + UDF (BEA01/NSR02/TEA01 e AVDP no setor 256), o padrão de DVD-Video. O primeiro VOB está no LBA 328. |
+| 10 | Nenhum setor embaralhado e nenhuma recusa: o disco não tem CSS, então a ISO sai utilizável direto. |
+| 11 | A leitura atravessa a troca de camada: o fim da camada 0 (LBA 1.881.376) lê dados MPEG, e o início da camada 1 (LBA 1.881.392) lê com sucesso. **Ponto a verificar:** os 16 primeiros setores da camada 1 voltaram todos zerados em 0,7 ms. Pode ser preenchimento normal entre arquivos ou um comportamento do drive. A leitura completa (Marco 2) vai mostrar se os setores seguintes têm vídeo. |
+| 12 | Nenhum erro de mídia nos trechos lidos. As amostras de 25%, 50%, 75% e "fim do disco" usaram a capacidade errada e caíram **além do fim real** (LBAs > 3.317.799). Elas falharam com "resposta curta (3 bytes)", sem sense, levando cerca de 1,1 a 1,5 s cada. |
+
+### Consequências para o Marco 2
+
+- **O tamanho do disco vem da estrutura do DVD** (cálculo OTP), conferida com o ISO9660. READ CAPACITY fica só como último recurso (CD/BD).
+- **Erros podem vir sem sense.** A falha fora do fim do disco veio como resposta de 3 bytes, sem dados de sense. A leitura precisa tratar isso como falha comum. Também vale tentar REQUEST SENSE em seguida para descobrir o motivo.
+- **Bloco padrão de 32 setores (64 KiB)**, configurável até 64.
+- **Velocidade:** os números do spike (1–2,5 MiB/s) vêm de leituras curtas, ainda com o disco acelerando, e não servem como estimativa. O Marco 2 vai medir a velocidade sustentada.
+- **Sair do app no meio:** a primeira execução foi interrompida sem erro no log (provavelmente o app foi fechado ou suspenso). O Marco 2 vai tratar o botão B e avisar antes de sair.

@@ -316,6 +316,15 @@ namespace xISOBurn.Spike
             _log.Info("READ CAPACITY: " + _capacity + " | estrutura DVD: " + structure + " | diferença: " + (_capacity - structure));
             string verdict = _capacity == structure ? "iguais" : "DIFERENTES (ver log)";
             _summary.Add("Tamanhos READ CAPACITY x estrutura: " + verdict);
+
+            // No drive do Xbox (PLDS DG-6M5S), READ CAPACITY de um DVD-9 OTP veio como
+            // "setor final - setor inicial + 1", ignorando a numeração complementada da camada 1, ou
+            // seja, maior que o disco. A estrutura é a fonte confiável; as amostras usam ela.
+            if (structure > 0 && structure != _capacity && (_pfi0.NumberOfLayers == 1 || _pfi0.OppositeTrackPath))
+            {
+                _log.Info("Usando o tamanho da estrutura DVD (" + structure + ") nas próximas etapas.");
+                _capacity = structure;
+            }
         }
 
         // ---------------------------------------------------------------- leituras

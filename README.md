@@ -3,9 +3,10 @@
 App para Xbox Series X (UWP, Modo Desenvolvedor) que lê o disco do drive óptico do console, setor
 por setor, e envia a imagem pela rede local para um receptor no PC, que grava uma ISO.
 
-> **Estado atual: Marco 1 (teste de viabilidade).** O app só detecta o drive, lê as informações do
-> disco e os primeiros setores e grava um log. Ainda não há cópia completa nem rede.
-> Veja [docs/spike.md](docs/spike.md) para compilar, instalar e testar.
+> **Estado atual: Marco 2.** O app copia o disco inteiro para um arquivo local no Xbox (LocalState).
+> Ele tenta de novo por bloco e por setor, e gera um mapa de setores ruins e o SHA-256. Ainda não há rede.
+> - Compilar, instalar e o resultado do teste de viabilidade: [docs/spike.md](docs/spike.md)
+> - Como testar a leitura completa e o `config.json`: [docs/marco2.md](docs/marco2.md)
 
 ## Estrutura
 
@@ -13,6 +14,7 @@ por setor, e envia a imagem pela rede local para um receptor no PC, que grava um
 |-------|----------|
 | `xbox-app/` | Projeto UWP em C# (`xISOBurn.sln`) |
 | `xbox-app/xISOBurn/Scsi/` | Acesso ao drive: `Windows.Devices.Custom` + SCSI pass-through |
+| `xbox-app/xISOBurn/Core/` | Detecção do disco, leitura com novas tentativas, mapa de erros, cópia |
 | `xbox-app/xISOBurn/Spike/` | Roteiro do teste de viabilidade |
 | `xbox-app/tools/` | Script que gera os ícones do pacote |
 | `docs/` | Anotações e resultados do spike |

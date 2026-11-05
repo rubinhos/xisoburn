@@ -11,7 +11,16 @@ namespace xISOBurn.Scsi
         public byte Asc;
         public byte Ascq;
 
+        /// <summary>Obtido com REQUEST SENSE depois da falha (o driver não trouxe o sense junto).</summary>
+        public bool FromRequestSense;
+
         public string Code { get { return Key.ToString("X2") + "/" + Asc.ToString("X2") + "/" + Ascq.ToString("X2"); } }
+
+        /// <summary>02/3A/xx: sem disco no drive. Não é setor ruim; a cópia precisa parar.</summary>
+        public bool IsNoMedium { get { return Key == 0x02 && Asc == 0x3A; } }
+
+        /// <summary>05/21/00: LBA fora do disco.</summary>
+        public bool IsOutOfRange { get { return Key == 0x05 && Asc == 0x21; } }
 
         /// <summary>Erro de mídia (chave 3): setor ruim de verdade.</summary>
         public bool IsMediumError { get { return Key == 0x03; } }
@@ -47,7 +56,7 @@ namespace xISOBurn.Scsi
 
         public override string ToString()
         {
-            return Code + " " + Describe();
+            return Code + " " + Describe() + (FromRequestSense ? " [via REQUEST SENSE]" : "");
         }
 
         public string Describe()

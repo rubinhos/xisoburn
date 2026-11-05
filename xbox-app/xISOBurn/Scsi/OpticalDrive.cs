@@ -101,6 +101,38 @@ namespace xISOBurn.Scsi
             if (dataLength < 0 || dataLength > MaxTransferBytes) throw new ArgumentOutOfRangeException("dataLength");
 
             await _gate.WaitAsync();
+            try
+            {
+                var result = await SendCoreAsync(cdb, dataLength, dest, destOffset, timeoutSeconds);
+
+                // No spike, leituras fora do fim do disco voltaram como "resposta curta (3 bytes)", sem
+                // sense. Nesses casos pedimos o sense explicitamente (REQUEST SENSE, 0x03). Se o driver
+                // já consumiu o sense (auto-sense), o drive responde "NO SENSE" e a informação se perde,
+                // mas não custa tentar: é um comando rápido e sem efeito colateral.
+                if (!result.Success && result.Sense == null && cdb[0] != 0x03)
+                {
+                    var sense = new byte[18];
+                    var rs = await SendCoreAsync(ScsiCommands.RequestSense(18), 18, sense, 0, 10);
+                    if (rs.Success && rs.DataLength >= 8)
+                    {
+                        var parsed = SenseInfo.Parse(sense, rs.DataLength);
+                        if (parsed != null && parsed.Key != 0)
+                        {
+                            parsed.FromRequestSense = true;
+                            result.Sense = parsed;
+                        }
+                    }
+                }
+                return result;
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        private async Task<ScsiResult> SendCoreAsync(byte[] cdb, int dataLength, byte[] dest, int destOffset, uint timeoutSeconds)
+        {
             var sw = Stopwatch.StartNew();
             var result = new ScsiResult();
             try
@@ -127,8 +159,11 @@ namespace xISOBurn.Scsi
 
                 if (received < SptSize)
                 {
+                    // Registrar os bytes crus ajuda a entender o que o driver do Xbox devolve nesse caso.
+                    var raw = new System.Text.StringBuilder();
+                    for (int i = 0; i < Math.Min((int)received, 16); i++) raw.Append(_out[i].ToString("x2")).Append(' ');
                     result.IoctlOk = false;
-                    result.IoctlError = "resposta curta (" + received + " bytes)";
+                    result.IoctlError = "resposta curta (" + received + " bytes: " + raw.ToString().Trim() + ")";
                     return result;
                 }
 
@@ -166,9 +201,17 @@ namespace xISOBurn.Scsi
             finally
             {
                 result.ElapsedMs = sw.Elapsed.TotalMilliseconds;
-                _gate.Release();
             }
             return result;
+        }
+
+        /// <summary>Procura a primeira interface CD-ROM e abre. Lança exceção se não houver drive.</summary>
+        public static async Task<OpticalDrive> FindAndOpenAsync(int maxTransferBytes)
+        {
+            var devices = await FindAsync();
+            if (devices.Count == 0)
+                throw new InvalidOperationException("Nenhum drive óptico encontrado (interface CD-ROM).");
+            return await OpenAsync(devices[0].Id, maxTransferBytes);
         }
 
         public void Dispose()
