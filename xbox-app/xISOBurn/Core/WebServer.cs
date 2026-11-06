@@ -540,7 +540,7 @@ namespace xISOBurn.Core
                 links.Append(" &middot; <a href=\"/files/").Append(enc).Append(".sha256\">sha256</a>");
 
             string delete = live != null ? "" :
-                "<form method=\"post\" action=\"/delete\" onsubmit=\"return confirm('Delete " + Enc(name).Replace("'", "\\'") +
+                "<form method=\"post\" action=\"/delete\" data-wait=\"Deleting...\" onsubmit=\"return confirm('Delete " + Enc(name).Replace("'", "\\'") +
                 " from the Xbox? Download it first.')\"><input type=\"hidden\" name=\"name\" value=\"" + Enc(name) +
                 "\"><button>Delete</button></form>";
 
@@ -585,7 +585,7 @@ namespace xISOBurn.Core
         {
             return Shell("<h2>PIN</h2><p>Type the PIN shown at the top of the xISOBurn screen on the Xbox.</p>" +
                          (error != null ? "<p class=\"err\">" + Enc(error) + "</p>" : "") +
-                         "<form method=\"post\" action=\"/login\"><input name=\"pin\" type=\"password\" inputmode=\"numeric\" " +
+                         "<form method=\"post\" action=\"/login\" data-wait=\"Checking the PIN...\"><input name=\"pin\" type=\"password\" inputmode=\"numeric\" " +
                          "autocomplete=\"off\" autofocus size=\"8\"> <button>Enter</button></form>", false);
         }
 
@@ -625,7 +625,7 @@ namespace xISOBurn.Core
             var b = new StringBuilder();
             b.Append("<h2>Settings</h2>");
             if (error != null) b.Append("<p class=\"err\">").Append(Enc(error)).Append("</p>");
-            b.Append("<form method=\"post\" action=\"/settings\" class=\"settings\">");
+            b.Append("<form method=\"post\" action=\"/settings\" class=\"settings\" data-wait=\"Saving the settings...\">");
 
             b.Append("<h3>Web page</h3>");
             b.Append("<p>Port (1024-65535; changing it needs an app restart)<br>")
@@ -681,10 +681,33 @@ namespace xISOBurn.Core
             "d.addEventListener('toggle',function(){S.setItem('open_'+d.id,d.open?'1':'0')});});" +
             "var y=S.getItem('scrollY');if(y!==null)window.scrollTo(0,parseInt(y,10));" +
             "function tick(){" +
+            "if(window.xbBusy)return;" + // a form is being sent: the response replaces the page anyway
             "var sel=window.getSelection?String(window.getSelection()):'';" +
             "if(sel.length>0){setTimeout(tick,5000);return;}" +
             "S.setItem('scrollY',String(window.scrollY));location.reload();}" +
             "setTimeout(tick,5000);})();</script>";
+
+        // Full-screen "loading" while a form is sent (the app's buttons, Settings, Delete, PIN): the Xbox
+        // can take a moment to answer, and without it the click looked ignored. The listener is on the
+        // document, so it runs after a form's own onsubmit: a cancelled Delete confirmation
+        // (defaultPrevented) shows nothing. The overlay also blocks a second click. The submit button is
+        // not disabled, because a disabled button's name/value would not be sent. 'pageshow' hides the
+        // overlay when the browser's Back button brings a cached page back.
+        private const string BusyOverlay =
+            "<div id=\"busy\" role=\"status\" aria-live=\"polite\"><div class=\"spin\"></div><div id=\"busytext\"></div></div>" +
+            "<script>(function(){" +
+            "var o=document.getElementById('busy'),t=document.getElementById('busytext');" +
+            "document.addEventListener('submit',function(e){" +
+            "if(e.defaultPrevented)return;" +
+            "var b=e.submitter||e.target.querySelector('button');" +
+            "t.textContent=(b&&b.getAttribute('data-wait'))||e.target.getAttribute('data-wait')||'Sending to the Xbox...';" +
+            "o.className='on';window.xbBusy=true;" +
+            // No answer (app closed, network down): say so after 30 s and let a click close the overlay.
+            "setTimeout(function(){if(!window.xbBusy)return;" +
+            "t.textContent='No answer from the Xbox. Is xISOBurn still open on the screen? Click to close.';" +
+            "o.onclick=function(){o.className='';o.onclick=null;window.xbBusy=false;};},30000);});" +
+            "window.addEventListener('pageshow',function(){o.className='';window.xbBusy=false;});" +
+            "})();</script>";
 
         private static string Shell(string body, bool autoRefresh)
         {
@@ -701,8 +724,14 @@ namespace xISOBurn.Core
                    "input{padding:6px;font-size:16px}details{margin-top:18px}" +
                    "button[disabled]{background:#333;color:#777;cursor:default}.controls button{margin:0 6px 6px 0;font-size:15px}" +
                    "h3{font-size:15px;color:#9fe07a;margin:16px 0 4px}select{padding:6px;font-size:15px}.settings p{margin:6px 0}" +
+                   "#busy{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.65);display:none;z-index:10;" +
+                   "flex-direction:column;align-items:center;justify-content:center;font-size:17px;color:#e8e8e8;cursor:wait}" +
+                   "#busy.on{display:flex}.spin{width:48px;height:48px;margin-bottom:16px;border:5px solid #2e7d32;" +
+                   "border-top-color:#4cc417;border-radius:50%;animation:spin .8s linear infinite}" +
+                   "@keyframes spin{to{transform:rotate(360deg)}}" +
                    "</style></head><body><h1>xISOBurn</h1><div class=\"dim\">Served by the Xbox" +
                    (autoRefresh ? " &middot; updates every 5 s" : "") + "</div>" + body +
+                   BusyOverlay +
                    (autoRefresh ? RefreshScript : "") +
                    "</body></html>";
         }

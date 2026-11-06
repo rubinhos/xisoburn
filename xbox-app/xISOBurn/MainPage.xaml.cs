@@ -153,14 +153,16 @@ namespace xISOBurn
             var sb = new System.Text.StringBuilder();
             sb.Append("<h2>Now on the Xbox</h2>");
             // The app's buttons, enabled exactly as on the console. The server checks again when one is pressed.
-            Func<string, string, Button, string> button = (action, label, b) =>
-                "<button name=\"do\" value=\"" + action + "\"" + (b.IsEnabled && !_settingsOpen ? "" : " disabled") + ">" + label + "</button>";
+            // data-wait: the text of the full-screen loading shown until the Xbox answers.
+            Func<string, string, string, Button, string> button = (action, label, wait, b) =>
+                "<button name=\"do\" value=\"" + action + "\" data-wait=\"" + wait + "\"" +
+                (b.IsEnabled && !_settingsOpen ? "" : " disabled") + ">" + label + "</button>";
             sb.Append("<form method=\"post\" action=\"/action\" class=\"controls\">")
-              .Append(button("detect", "Detect disc", DetectButton))
-              .Append(button("copy", "Copy / resume", CopyButton))
-              .Append(button("cancel", "Pause / cancel", CancelButton))
-              .Append(button("retry", "Retry failed", RetryButton))
-              .Append(button("scan", "Scan disc", ScanButton))
+              .Append(button("detect", "Detect disc", "Detecting the disc...", DetectButton))
+              .Append(button("copy", "Copy / resume", "Starting the copy...", CopyButton))
+              .Append(button("cancel", "Pause / cancel", "Pausing...", CancelButton))
+              .Append(button("retry", "Retry failed", "Starting the retry pass...", RetryButton))
+              .Append(button("scan", "Scan disc", "Starting the scan...", ScanButton))
               .Append(SettingsButton.IsEnabled && !_settingsOpen
                   ? "<a href=\"/settings\">Settings</a>"
                   : "<span class=\"dim\">Settings (unavailable while the app is busy or the dialog is open on the Xbox)</span>")
