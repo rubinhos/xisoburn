@@ -150,7 +150,8 @@ the file with every current key, so the file always lists what the app uses.
   "DecryptCss": true,
   "WebPort": 8770,
   "WebPinRequired": true,
-  "WebPin": "1234"
+  "WebPin": "1234",
+  "KeepAwake": false
 }
 ```
 
@@ -168,6 +169,7 @@ the file with every current key, so the file always lists what the app uses.
 | `DecryptCss` | Decrypt CSS-protected DVD-Video while copying. `false` copies the video sectors as the drive returns them. |
 | `WebPort` | Port of the web page. Changing it needs an app restart. |
 | `WebPinRequired`, `WebPin` | Ask for the 4–8 digit PIN shown on the Xbox screen. |
+| `KeepAwake` | Keep the console awake while the app is open: no dimming and no idle power-off. When it is off, the idle Xbox suspends the app and the web page stops answering until the app resumes. After a resume the app restarts the web page by itself. Applies at once. |
 
 ## Web page
 

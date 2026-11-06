@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
+using Windows.Networking.Connectivity;
 using Windows.Storage;
 using Windows.System.Display;
 using Windows.UI.Core;
@@ -68,10 +69,33 @@ namespace xISOBurn
             Loaded += async (s, e) =>
             {
                 DetectButton.Focus(FocusState.Programmatic);
+                UpdateKeepAwake();
                 await StartWebAsync();
             };
             // On Xbox, the B button raises BackRequested. Unhandled, the system may close the app mid-copy.
             SystemNavigationManager.GetForCurrentView().BackRequested += OnBackRequested;
+
+            // When the console idles (or the app is left in the background) the Xbox suspends the app and
+            // the system closes its listening socket: after a resume the web page must be opened again.
+            Application.Current.Suspending += (s, e) => _log.Info("The console suspended the app (idle or in the background); the web page is unavailable until it resumes.");
+            Application.Current.Resuming += (s, e) =>
+            {
+                var ignored = Dispatcher.RunAsync(CoreDispatcherPriority.Normal, async () =>
+                {
+                    _log.Info("The app resumed; restarting the web page.");
+                    await RestartWebAsync();
+                });
+            };
+            // A new IP address (DHCP renewal, cable/Wi-Fi change) also leaves the listener on a dead address.
+            NetworkInformation.NetworkStatusChanged += s =>
+            {
+                var ignored = Dispatcher.RunAsync(CoreDispatcherPriority.Normal, async () =>
+                {
+                    if (_web == null || WebUrlFor(WebServer.LocalAddresses(), _web.Port) == _webUrl) return;
+                    _log.Info("The network changed; restarting the web page.");
+                    await RestartWebAsync();
+                });
+            };
         }
 
         private async Task StartWebAsync()
@@ -81,19 +105,7 @@ namespace xISOBurn
             {
                 _web = new WebServer(_log, _folder, () => _webBody, () => _webCfg, RemoteAsync);
                 bool ok = await _web.StartAsync(cfg.WebPort);
-                var addrs = WebServer.LocalAddresses();
-                if (!ok || addrs.Count == 0)
-                {
-                    SubtitleText.Text = !ok ? "Web page unavailable on port " + cfg.WebPort + " - choose another port in Settings"
-                                            : "No network connection - the web page needs the local network";
-                    if (addrs.Count == 0) _log.Info("Web server: no IPv4 address found on the console's network adapters.");
-                }
-                else
-                {
-                    _webUrl = "http://" + addrs[0] + (cfg.WebPort == 80 ? "" : ":" + cfg.WebPort) + "/";
-                    ShowWebAddress();
-                    _log.Info("Web page (open in the PC browser): " + _webUrl + (addrs.Count > 1 ? "  (other addresses: " + string.Join(", ", addrs.GetRange(1, addrs.Count - 1)) + ")" : ""));
-                }
+                ShowWebStatus(ok, cfg.WebPort);
             }
             catch (Exception ex)
             {
@@ -104,6 +116,116 @@ namespace xISOBurn
             _webTimer.Tick += async (s, e) => { UpdateWebBody(); UpdateDownloadDisplay(); await RefreshFreeSpaceAsync(); };
             _webTimer.Start();
             UpdateWebBody();
+        }
+
+        private static string WebUrlFor(List<string> addrs, int port)
+        {
+            return addrs.Count == 0 ? "" : "http://" + addrs[0] + (port == 80 ? "" : ":" + port) + "/";
+        }
+
+        /// <summary>Shows the address to open on the PC (or why there is none) after the listener (re)started.</summary>
+        private void ShowWebStatus(bool ok, int port)
+        {
+            var addrs = WebServer.LocalAddresses();
+            _webUrl = ok ? WebUrlFor(addrs, port) : "";
+            if (!ok || addrs.Count == 0)
+            {
+                SubtitleText.Text = !ok ? "Web page unavailable on port " + port + " - choose another port in Settings"
+                                        : "No network connection - the web page needs the local network";
+                if (addrs.Count == 0) _log.Info("Web server: no IPv4 address found on the console's network adapters.");
+            }
+            else
+            {
+                ShowWebAddress();
+                _log.Info("Web page (open in the PC browser): " + _webUrl + (addrs.Count > 1 ? "  (other addresses: " + string.Join(", ", addrs.GetRange(1, addrs.Count - 1)) + ")" : ""));
+            }
+        }
+
+        private bool _webRestarting;
+
+        /// <summary>Opens the listening socket again (after a resume or a network change), on the port in use.</summary>
+        private async Task RestartWebAsync()
+        {
+            if (_web == null || _web.Port == 0 || _webRestarting) return;
+            _webRestarting = true;
+            try
+            {
+                int port = _web.Port;
+                bool ok = await _web.RestartAsync();
+                if (!ok)
+                {
+                    // Right after a resume the network can take a moment to come back.
+                    await Task.Delay(3000);
+                    ok = await _web.StartAsync(port);
+                }
+                ShowWebStatus(ok, port);
+            }
+            catch (Exception ex)
+            {
+                _log.Info("Web server failed to restart: " + ex.Message);
+            }
+            finally
+            {
+                _webRestarting = false;
+            }
+        }
+
+        // Held while "Keep the console awake" is on: no dimming, no idle power-off, so the app is not suspended.
+        private DisplayRequest _keepAwake;
+
+        private void UpdateKeepAwake()
+        {
+            bool want = _webCfg != null && _webCfg.KeepAwake;
+            if (want && _keepAwake == null)
+            {
+                _keepAwake = new DisplayRequest();
+                _keepAwake.RequestActive();
+                _log.Info("Keeping the console awake while xISOBurn is open (Settings).");
+            }
+            else if (!want && _keepAwake != null)
+            {
+                _keepAwake.RequestRelease();
+                _keepAwake = null;
+                _log.Info("The console may dim and idle as usual again (keep awake turned off).");
+            }
+        }
+
+        private async void QuitButton_Click(object sender, RoutedEventArgs e)
+        {
+            bool copying = _cts != null && !_cts.IsCancellationRequested && _busy;
+            int downloads = _web != null ? _web.ActiveDownloads : 0;
+            string detail = copying ? "A copy is running. It will be paused; \"Copy / resume\" continues it next time."
+                          : _busy ? "The app is busy with the drive; the operation will be cancelled."
+                          : "The web page will stop answering until the app is opened again.";
+            if (downloads > 0) detail += "\nThe PC is downloading " + downloads + " file(s); the download will be interrupted (the browser can resume it later).";
+            var confirm = new ContentDialog
+            {
+                Title = "Quit xISOBurn?",
+                Content = detail,
+                PrimaryButtonText = "Quit",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            ContentDialogResult answer;
+            try { answer = await confirm.ShowAsync(); }
+            catch (Exception) { return; } // another dialog is open
+            if (answer != ContentDialogResult.Primary)
+            {
+                QuitButton.Focus(FocusState.Programmatic);
+                return;
+            }
+
+            _log.Info("Quit chosen on the console.");
+            if (_cts != null && !_cts.IsCancellationRequested)
+            {
+                // Let the copy stop at the end of the current block so the .map is saved.
+                _cts.Cancel();
+                StatusText.Text = "Pausing the copy before quitting...";
+                for (int i = 0; i < 100 && _busy; i++) await Task.Delay(100);
+            }
+            if (_web != null) _web.Dispose();
+            if (_keepAwake != null) { _keepAwake.RequestRelease(); _keepAwake = null; }
+            Application.Current.Exit();
         }
 
         private void UpdateDownloadDisplay()
@@ -495,6 +617,7 @@ namespace xISOBurn
             WebPortBox.Text = cfg.WebPort.ToString();
             PinRequiredBox.IsChecked = cfg.WebPinRequired;
             PinBox.Text = cfg.WebPin;
+            KeepAwakeBox.IsChecked = cfg.KeepAwake;
             OutputNameBox.Text = cfg.OutputName;
             WriteImageBox.IsChecked = cfg.WriteImage;
             DecryptCssBox.IsChecked = cfg.DecryptCss;
@@ -558,6 +681,7 @@ namespace xISOBurn
             cfg = CopyConfig.Load(_folder, out msg); // normalises the values exactly as a run will see them
             _webCfg = cfg;                            // PIN changes apply to the web page at once
             ShowWebAddress();
+            UpdateKeepAwake();
             ConfigText.Text = cfg.Describe();
             _log.Info("Settings saved from " + from + ": " + cfg.Describe());
             _restartNeeded = _web != null && _web.Port > 0 && cfg.WebPort != _web.Port;
@@ -574,6 +698,7 @@ namespace xISOBurn
                 { "WebPort", WebPortBox.Text },
                 { "WebPinRequired", PinRequiredBox.IsChecked == true ? "true" : "false" },
                 { "WebPin", PinBox.Text },
+                { "KeepAwake", KeepAwakeBox.IsChecked == true ? "true" : "false" },
                 { "OutputName", OutputNameBox.Text },
                 { "WriteImage", WriteImageBox.IsChecked == true ? "true" : "false" },
                 { "DecryptCss", DecryptCssBox.IsChecked == true ? "true" : "false" },

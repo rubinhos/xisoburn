@@ -48,6 +48,7 @@ namespace xISOBurn.Core
         private const int MaxHeaderBytes = 16 * 1024;
         private const int MaxBodyBytes = 4096;
         private const int FileChunk = 1 << 20;
+        private const int RequestTimeoutMs = 20000;
         private const string PinCookie = "xisoburn_pin";
         private static readonly string[] Downloadable = { ".iso", ".map", ".sha256", ".log" };
 
@@ -109,9 +110,25 @@ namespace xISOBurn.Core
             return list;
         }
 
+        /// <summary>
+        /// Closes the listening socket and opens it again on the same port. Needed after the app was
+        /// suspended (the system closes the listener then) or the network changed. Connections already
+        /// accepted, such as a download in progress, are their own sockets and keep going.
+        /// </summary>
+        public async Task<bool> RestartAsync()
+        {
+            int port = Port;
+            Dispose();
+            return port > 0 && await StartAsync(port);
+        }
+
         public void Dispose()
         {
-            if (_listener != null) _listener.Dispose();
+            if (_listener != null)
+            {
+                _listener.ConnectionReceived -= OnConnection;
+                _listener.Dispose();
+            }
             _listener = null;
         }
 
@@ -141,7 +158,15 @@ namespace xISOBurn.Core
                 using (var input = socket.InputStream.AsStreamForRead())
                 using (var output = socket.OutputStream.AsStreamForWrite())
                 {
-                    var req = await ReadRequestAsync(input);
+                    // Browsers open spare connections in advance and may never send anything on them: give
+                    // up on a request that is not in after a while instead of holding the socket forever.
+                    var reading = ReadRequestAsync(input);
+                    if (await Task.WhenAny(reading, Task.Delay(RequestTimeoutMs)) != reading)
+                    {
+                        var observed = reading.ContinueWith(t => { var ignored = t.Exception; }); // fails once the socket is closed
+                        return;
+                    }
+                    var req = await reading;
                     if (req == null) return;
                     req.Remote = remote;
                     await RouteAsync(req, output);
@@ -639,6 +664,7 @@ namespace xISOBurn.Core
              .Append(text("WebPort", cfg.WebPort.ToString(inv), "type=\"number\" min=\"1024\" max=\"65535\"")).Append("</p>");
             b.Append("<p>").Append(check("WebPinRequired", cfg.WebPinRequired)).Append("Ask for the PIN on the web page</label></p>");
             b.Append("<p>PIN (4 to 8 digits)<br>").Append(text("WebPin", cfg.WebPin, "inputmode=\"numeric\" size=\"8\"")).Append("</p>");
+            b.Append("<p>").Append(check("KeepAwake", cfg.KeepAwake)).Append("Keep the console awake while xISOBurn is open (otherwise the Xbox suspends the app when idle and this page stops answering)</label></p>");
 
             b.Append("<h3>Copy</h3>");
             b.Append("<p>File name (empty = the disc's volume label)<br>").Append(text("OutputName", cfg.OutputName, "size=\"30\"")).Append("</p>");

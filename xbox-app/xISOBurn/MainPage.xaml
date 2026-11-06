@@ -42,6 +42,8 @@
             <Button x:Name="RetryButton" Content="Retry failed" Click="RetryButton_Click" FontSize="14" Padding="10,4" IsEnabled="False"/>
             <Button x:Name="ScanButton" Content="Scan disc" Click="ScanButton_Click" FontSize="14" Padding="10,4"/>
             <Button x:Name="SettingsButton" Content="Settings" Click="SettingsButton_Click" FontSize="14" Padding="10,4"/>
+            <!-- Closes the app (asks first; a copy in progress is paused and can be resumed later). -->
+            <Button x:Name="QuitButton" Content="Quit" Click="QuitButton_Click" FontSize="14" Padding="10,4"/>
         </StackPanel>
         </ScrollViewer>
 
@@ -101,6 +103,7 @@
                     <TextBox x:Name="WebPortBox" Header="Port (1024-65535; changing it needs an app restart)" Width="200"
                              HorizontalAlignment="Left" InputScope="Number"/>
                     <CheckBox x:Name="PinRequiredBox" Content="Ask for the PIN on the web page"/>
+                    <CheckBox x:Name="KeepAwakeBox" Content="Keep the console awake while xISOBurn is open (applies at once)"/>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBox x:Name="PinBox" Header="PIN (4 to 8 digits)" Width="140" InputScope="Number"/>
                         <Button x:Name="NewPinButton" Content="New PIN" Click="NewPinButton_Click" VerticalAlignment="Bottom"/>
@@ -142,7 +145,7 @@
                     </StackPanel>
 
                     <TextBlock x:Name="SettingsError" Foreground="#FF6B6B" FontSize="12" TextWrapping="Wrap"/>
-                    <TextBlock Text="Changes apply from the next run. Only a new web page port needs an app restart."
+                    <TextBlock Text="Changes apply from the next run (keep awake and the PIN at once). Only a new web page port needs an app restart."
                                FontSize="12" Opacity="0.7" TextWrapping="Wrap"/>
                 </StackPanel>
             </ScrollViewer>
