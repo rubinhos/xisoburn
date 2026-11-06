@@ -28,17 +28,24 @@
         </StackPanel>
 
         <!-- Controller-only navigation: D-pad between buttons, A activates, B cancels a copy. -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
-            <Button x:Name="DetectButton" Content="Detect disc" Click="DetectButton_Click" FontSize="15" Padding="12,5"/>
-            <Button x:Name="CopyButton" Content="Copy / resume" Click="CopyButton_Click" FontSize="15" Padding="12,5"/>
-            <Button x:Name="CancelButton" Content="Cancel (B)" Click="CancelButton_Click" FontSize="15" Padding="12,5" IsEnabled="False"/>
+        <!--
+          7 buttons do not fit in the ~880 effective pixels left inside the TV safe area: the row scrolls
+          horizontally, and moving focus with the D-pad brings the focused button into view.
+        -->
+        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Hidden" HorizontalScrollMode="Enabled"
+                      VerticalScrollBarVisibility="Disabled" VerticalScrollMode="Disabled">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button x:Name="DetectButton" Content="Detect disc" Click="DetectButton_Click" FontSize="14" Padding="10,4"/>
+            <Button x:Name="CopyButton" Content="Copy / resume" Click="CopyButton_Click" FontSize="14" Padding="10,4"/>
+            <Button x:Name="CancelButton" Content="Cancel (B)" Click="CancelButton_Click" FontSize="14" Padding="10,4" IsEnabled="False"/>
             <!-- Enabled only when a previous rescue of the inserted disc left failed sectors. -->
-            <Button x:Name="RetryButton" Content="Retry failed" Click="RetryButton_Click" FontSize="15" Padding="12,5" IsEnabled="False"/>
-            <Button x:Name="ScanButton" Content="Scan disc" Click="ScanButton_Click" FontSize="15" Padding="12,5"/>
+            <Button x:Name="RetryButton" Content="Retry failed" Click="RetryButton_Click" FontSize="14" Padding="10,4" IsEnabled="False"/>
+            <Button x:Name="ScanButton" Content="Scan disc" Click="ScanButton_Click" FontSize="14" Padding="10,4"/>
             <!-- Proof of concept: CSS authentication + descrambling (libdvdcss port), see docs/css-poc.md. -->
-            <Button x:Name="CssTestButton" Content="CSS test" Click="CssTestButton_Click" FontSize="15" Padding="12,5"/>
-            <Button x:Name="SettingsButton" Content="Settings" Click="SettingsButton_Click" FontSize="15" Padding="12,5"/>
+            <Button x:Name="CssTestButton" Content="CSS test" Click="CssTestButton_Click" FontSize="14" Padding="10,4"/>
+            <Button x:Name="SettingsButton" Content="Settings" Click="SettingsButton_Click" FontSize="14" Padding="10,4"/>
         </StackPanel>
+        </ScrollViewer>
 
         <!-- Info panels: small fonts and a fixed maximum height (the details are in the log). -->
         <Grid Grid.Row="2" ColumnSpacing="8" MaxHeight="120">
