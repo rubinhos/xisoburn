@@ -147,6 +147,31 @@ namespace xISOBurn.Core
             }
         }
 
+        private static byte[] _favicon;
+        private static bool _faviconLoaded;
+
+        /// <summary>
+        /// The app icon (the unplated 32 px tile from the package, made from designer.png), read once.
+        /// PNG works as a favicon in every current browser, also when requested as /favicon.ico.
+        /// </summary>
+        private byte[] Favicon()
+        {
+            if (_faviconLoaded) return _favicon;
+            try
+            {
+                string path = Path.Combine(Windows.ApplicationModel.Package.Current.InstalledLocation.Path,
+                                           "Assets", "Square44x44Logo.targetsize-32_altform-unplated.png");
+                _favicon = File.ReadAllBytes(path);
+            }
+            catch (Exception ex)
+            {
+                _log.Info("Web: favicon not available: " + ex.Message);
+                _favicon = null;
+            }
+            _faviconLoaded = true;
+            return _favicon;
+        }
+
         private async Task RouteAsync(Request req, Stream output)
         {
             bool head = req.Method == "HEAD";
@@ -165,6 +190,15 @@ namespace xISOBurn.Core
                     _log.Info("Web: " + req.Remote + " typed a wrong PIN.");
                     await HtmlAsync(output, 200, LoginPage("Wrong PIN. It is shown at the top of the xISOBurn screen on the Xbox."), false);
                 }
+                return;
+            }
+
+            // The icon is public: the PIN page shows it too.
+            if ((req.Method == "GET" || head) && (req.Path == "/favicon.ico" || req.Path == "/favicon.png"))
+            {
+                var icon = Favicon();
+                if (icon != null) await RespondAsync(output, 200, "OK", "image/png", icon, head);
+                else await RespondAsync(output, 404, "Not Found", "text/plain", new byte[0], head);
                 return;
             }
 
@@ -195,10 +229,6 @@ namespace xISOBurn.Core
                 string message = Delete(name ?? "", req.Remote);
                 if (message == null) await RedirectAsync(output, "/", "");
                 else await HtmlAsync(output, 200, Shell("<p>" + Enc(message) + "</p><p><a href=\"/\">Back</a></p>", false), false);
-            }
-            else if (req.Path == "/favicon.ico")
-            {
-                await RespondAsync(output, 404, "Not Found", "text/plain", new byte[0], head);
             }
             else
             {
@@ -549,7 +579,7 @@ namespace xISOBurn.Core
         {
             // Refresh with JavaScript, not <meta refresh>: timers pause while the delete confirmation is open.
             return "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">" +
-                   "<title>xISOBurn</title><style>" +
+                   "<title>xISOBurn</title><link rel=\"icon\" type=\"image/png\" href=\"/favicon.png\"><style>" +
                    "body{background:#0b0b0b;color:#e8e8e8;font:15px Segoe UI,sans-serif;margin:24px;max-width:1100px}" +
                    "h1{color:#4cc417;margin:0}h2{font-size:17px;color:#9fe07a;margin:22px 0 8px}" +
                    "a{color:#4cc417}.box{background:#161616;border:1px solid #2e7d32;padding:10px;white-space:pre-wrap;margin-bottom:6px}" +
