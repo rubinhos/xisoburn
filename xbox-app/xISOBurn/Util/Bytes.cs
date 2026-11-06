@@ -9,7 +9,6 @@ namespace xISOBurn.Util
     internal static class Bytes
     {
         public static int BE16(byte[] b, int o) { return (b[o] << 8) | b[o + 1]; }
-        public static uint BE24(byte[] b, int o) { return ((uint)b[o] << 16) | ((uint)b[o + 1] << 8) | b[o + 2]; }
         public static uint BE32(byte[] b, int o) { return ((uint)b[o] << 24) | ((uint)b[o + 1] << 16) | ((uint)b[o + 2] << 8) | b[o + 3]; }
 
         public static ushort LE16(byte[] b, int o) { return (ushort)(b[o] | (b[o + 1] << 8)); }

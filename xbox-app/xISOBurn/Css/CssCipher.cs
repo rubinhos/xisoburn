@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Port to C# of the CSS cipher from libdvdcss src/css.c
 // (Copyright (C) 1999-2008 VideoLAN, GPL-2.0-or-later; authors Stéphane Borel, Håkan Hjort; based on
 // css-auth by Derek Fawcus, the CSS ioctls example by Andrew T. Veliath, DeCSSPlus and DecVOB).

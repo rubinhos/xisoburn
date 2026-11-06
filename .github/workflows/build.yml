@@ -33,10 +33,10 @@ jobs:
 
       - uses: microsoft/setup-msbuild@v3
 
-      - name: Package version (0.1.<build number>.0)
+      - name: Package version (1.0.<build number>.0)
         shell: pwsh
         run: |
-          $version = "0.1.${{ github.run_number }}.0"
+          $version = "1.0.${{ github.run_number }}.0"
           $path = (Resolve-Path $env:MANIFEST).Path
           [xml]$xml = Get-Content $path -Raw
           $xml.Package.Identity.Version = $version

@@ -19,7 +19,7 @@ namespace xISOBurn.Core
         public const string FileName = "config.json";
         public const int MaxSectorsPerRead = 64;
 
-        /// <summary>Sectors per READ(10) in good areas. The spike showed 16..64 work on the Series X drive.</summary>
+        /// <summary>Sectors per READ(10) in good areas. 16..64 work on the Series X drive.</summary>
         public int SectorsPerRead = 32;
         /// <summary>Maximum time per SCSI command (seconds). On the Xbox drive a failing read took ~6 s.</summary>
         public int TimeoutSeconds = 20;
@@ -49,6 +49,11 @@ namespace xISOBurn.Core
         public bool WriteImage = true;
         /// <summary>File name without extension. Empty = the disc's volume label.</summary>
         public string OutputName = "";
+        /// <summary>
+        /// CSS-protected DVD-Video: authenticate with the drive and decrypt the video while copying, so the
+        /// ISO plays anywhere. false = copy the sectors as the drive returns them (still scrambled).
+        /// </summary>
+        public bool DecryptCss = true;
         /// <summary>TCP port of the web page served by the app (the PC browser downloads from it). Needs an app restart.</summary>
         public int WebPort = 8770;
         /// <summary>Ask for the PIN on the web page (so nobody else on the network can download or delete copies).</summary>
@@ -96,6 +101,7 @@ namespace xISOBurn.Core
                 cfg.SectorLimit = (long)o.GetNamedNumber("SectorLimit", cfg.SectorLimit);
                 cfg.WriteImage = o.GetNamedBoolean("WriteImage", cfg.WriteImage);
                 cfg.OutputName = o.GetNamedString("OutputName", cfg.OutputName);
+                cfg.DecryptCss = o.GetNamedBoolean("DecryptCss", cfg.DecryptCss);
                 cfg.WebPort = (int)o.GetNamedNumber("WebPort", cfg.WebPort);
                 cfg.WebPinRequired = o.GetNamedBoolean("WebPinRequired", cfg.WebPinRequired);
                 cfg.WebPin = o.GetNamedString("WebPin", cfg.WebPin);
@@ -122,7 +128,7 @@ namespace xISOBurn.Core
             int rc = DriveReadRetryCount < 0 ? -1 : Math.Min(255, DriveReadRetryCount);
             long ss = Math.Max(0, StartSector);
             long sl = Math.Max(0, SectorLimit);
-            // Ports below 1024 are reserved; the spike confirmed 8770, 8080 and 50080 work on the Xbox.
+            // Ports below 1024 are reserved; 8770, 8080 and 50080 are known to work on the Xbox.
             int port = WebPort >= 1024 && WebPort <= 65535 ? WebPort : DefaultWebPort;
             string pin = (WebPin ?? "").Trim();
             bool pinOk = pin.Length >= 4 && pin.Length <= 8;
@@ -151,6 +157,7 @@ namespace xISOBurn.Core
             sb.Append("  \"SectorLimit\": ").Append(SectorLimit.ToString(inv)).Append(",\n");
             sb.Append("  \"WriteImage\": ").Append(WriteImage ? "true" : "false").Append(",\n");
             sb.Append("  \"OutputName\": ").Append(JsonValue.CreateStringValue(OutputName ?? "").Stringify()).Append(",\n");
+            sb.Append("  \"DecryptCss\": ").Append(DecryptCss ? "true" : "false").Append(",\n");
             sb.Append("  \"WebPort\": ").Append(WebPort.ToString(inv)).Append(",\n");
             sb.Append("  \"WebPinRequired\": ").Append(WebPinRequired ? "true" : "false").Append(",\n");
             sb.Append("  \"WebPin\": ").Append(JsonValue.CreateStringValue(WebPin ?? "").Stringify()).Append("\n");
@@ -166,6 +173,7 @@ namespace xISOBurn.Core
                    " | drive retries " + (DriveReadRetryCount >= 0 ? DriveReadRetryCount.ToString() : "unchanged") +
                    " | range " + StartSector + "+" + (SectorLimit > 0 ? SectorLimit.ToString() : "end") +
                    " | write image: " + (WriteImage ? "yes" : "no") +
+                   " | decrypt CSS: " + (DecryptCss ? "yes" : "no") +
                    " | web port " + WebPort + (WebPinRequired ? " with PIN" : " without PIN");
         }
     }

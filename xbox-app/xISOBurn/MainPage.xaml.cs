@@ -193,7 +193,6 @@ namespace xISOBurn
             CopyButton.IsEnabled = !busy;
             RetryButton.IsEnabled = !busy && _failedSectors > 0;
             ScanButton.IsEnabled = !busy;
-            CssTestButton.IsEnabled = !busy;
             SettingsButton.IsEnabled = !busy;
             CancelButton.IsEnabled = copying;
             if (copying) CancelButton.Focus(FocusState.Programmatic);
@@ -339,21 +338,14 @@ namespace xISOBurn
                     return;
                 }
 
-                // CSS-protected DVD-Video: the drive refuses the scrambled video sectors, so the copy
-                // would run for hours and end with an image that does not play. Ask first.
-                if (_probe.Cpst == 1 && !extraRetryPass && !await ConfirmCssCopyAsync())
-                {
-                    _log.Info("Copy not started: the disc is CSS-protected and the user chose not to copy it.");
-                    StatusText.Text = "Copy not started: this disc is CSS-protected.";
-                    return;
-                }
-
                 // Keep the screen on: on Xbox, an app that leaves the screen or lets it dim gets suspended.
                 display.RequestActive();
                 displayActive = true;
                 _cts = new CancellationTokenSource();
                 SetBusy(true, true);
-                StatusText.Text = "Copying to the Xbox... do not leave the app. B pauses (progress is kept). " +
+                StatusText.Text = "Copying to the Xbox" +
+                                  (_probe.Cpst == 1 && cfg.DecryptCss ? " (CSS disc: decrypting the video)" : "") +
+                                  "... do not leave the app. B pauses (progress is kept). " +
                                   "The download can already start on the web page.";
                 Bar.Value = 0;
                 _refusalShown = false;
@@ -382,6 +374,9 @@ namespace xISOBurn
                     StatusText.Text = "Stopped: " + result.Error + " (" + counts + ")";
                 else
                     StatusText.Text = "Range done: " + counts + ".";
+                if (result.CssDecrypting)
+                    StatusText.Text += " CSS: " + result.CssDescrambled.ToString("N0") + " sector(s) decrypted" +
+                                       (result.CssLeftScrambled > 0 ? ", " + result.CssLeftScrambled.ToString("N0") + " left scrambled (see log)" : "") + ".";
                 if (result.RefusedThisRun >= RescueJob.RefusalNoticeAfter)
                     StatusText.Text += " " + RefusalMessage(result.RefusedThisRun);
             }
@@ -423,25 +418,10 @@ namespace xISOBurn
 
         private string RefusalMessage(long refused)
         {
-            return "The drive refused " + refused.ToString("N0") + " read(s) at once: that is copy protection " +
-                   (_probe != null && _probe.Cpst == 1 ? "(this disc has CSS)" : "or a region mismatch") +
-                   ", not disc damage. Retrying will not recover those sectors.";
-        }
-
-        private async Task<bool> ConfirmCssCopyAsync()
-        {
-            var dialog = new ContentDialog
-            {
-                Title = "This disc is CSS-protected",
-                Content = "Most commercial DVD-Video discs use CSS. The drive refuses to read the protected video " +
-                          "files, so those sectors will fail and stay as zeros, and the image will not play.\n\n" +
-                          "xISOBurn does not decrypt CSS. It is meant for discs without CSS: home-made DVDs, " +
-                          "data and software discs, unprotected video.\n\nCopy anyway?",
-                PrimaryButtonText = "Copy anyway",
-                CloseButtonText = "Cancel",
-                DefaultButton = ContentDialogButton.Close,
-            };
-            return await dialog.ShowAsync() == ContentDialogResult.Primary;
+            return "The drive refused " + refused.ToString("N0") + " read(s) at once: that is copy protection or a " +
+                   "region mismatch, not disc damage" +
+                   (_probe != null && _probe.Cpst == 1 ? " (check the CSS section of the log: the disc's region must match the console's)" : "") +
+                   ". Retrying will not recover those sectors.";
         }
 
         private async void ScanButton_Click(object sender, RoutedEventArgs e)
@@ -488,53 +468,6 @@ namespace xISOBurn
             }
         }
 
-        /// <summary>
-        /// Proof of concept (docs/css-poc.md): CSS authentication with the drive, disc and title keys,
-        /// and descrambling of the first 4 MiB of the first title VOB. Writes nothing to the image.
-        /// </summary>
-        private async void CssTestButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (_busy) return;
-            SetBusy(true, false);
-            var display = new DisplayRequest();
-            bool displayActive = false;
-            try
-            {
-                string msg;
-                var cfg = CopyConfig.Load(_folder, out msg);
-                if (!await DetectAsync((uint)cfg.TimeoutSeconds))
-                {
-                    StatusText.Text = "No disc ready for the CSS test (see log).";
-                    return;
-                }
-                display.RequestActive();
-                displayActive = true;
-                _cts = new CancellationTokenSource();
-                SetBusy(true, true);
-                StatusText.Text = "CSS test: authenticating with the drive and descrambling a sample... B cancels.";
-                var progress = new Progress<string>(s => ProgressText.Text = "CSS test " + s);
-                var test = new CssTest(_drive, _probe, _log, _folder, (uint)cfg.TimeoutSeconds);
-                var token = _cts.Token;
-                StatusText.Text = await Task.Run(() => test.RunAsync(progress, token));
-            }
-            catch (OperationCanceledException)
-            {
-                StatusText.Text = "CSS test cancelled.";
-            }
-            catch (Exception ex)
-            {
-                _log.Info("ERROR in the CSS test: " + ex);
-                StatusText.Text = "Error: " + ex.Message;
-            }
-            finally
-            {
-                if (displayActive) display.RequestRelease();
-                if (_cts != null) { _cts.Dispose(); _cts = null; }
-                SetBusy(false, false);
-                CssTestButton.Focus(FocusState.Programmatic);
-            }
-        }
-
         // ------------------------------------------------------------ settings
 
         private bool _restartNeeded;
@@ -549,6 +482,7 @@ namespace xISOBurn
             PinBox.Text = cfg.WebPin;
             OutputNameBox.Text = cfg.OutputName;
             WriteImageBox.IsChecked = cfg.WriteImage;
+            DecryptCssBox.IsChecked = cfg.DecryptCss;
             SelectByTag(SectorsPerReadBox, cfg.SectorsPerRead.ToString());
             TimeoutBox.Text = cfg.TimeoutSeconds.ToString();
             SkipBox.IsChecked = cfg.SkipOnErrors;
@@ -613,6 +547,7 @@ namespace xISOBurn
             cfg.WebPinRequired = PinRequiredBox.IsChecked == true;
             cfg.OutputName = OutputNameBox.Text.Trim();
             cfg.WriteImage = WriteImageBox.IsChecked == true;
+            cfg.DecryptCss = DecryptCssBox.IsChecked == true;
             cfg.SkipOnErrors = SkipBox.IsChecked == true;
             cfg.SectorsPerRead = int.Parse(TagOf(SectorsPerReadBox, "32"));
             cfg.RetryReadSpeedKBps = int.Parse(TagOf(RetrySpeedBox, "1385"));

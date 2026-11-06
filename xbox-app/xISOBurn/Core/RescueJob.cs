@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Windows.Security.Cryptography;
 using Windows.Security.Cryptography.Core;
+using xISOBurn.Css;
 using xISOBurn.Scsi;
 using xISOBurn.Util;
 
@@ -67,6 +68,9 @@ namespace xISOBurn.Core
         /// <summary>Sectors tried / recovered by the scrape and retry passes of this run.</summary>
         public long RetriedThisRun, RecoveredThisRun;
         public long RefusedThisRun;   // failed reads that were quick refusals, not media errors
+        /// <summary>CSS: true when the drive was authenticated and the video is decrypted while copying.</summary>
+        public bool CssDecrypting;
+        public long CssDescrambled, CssLeftScrambled;
         public string Sha256;
         public string ImagePath, MapPath;
         public TimeSpan Elapsed;
@@ -74,7 +78,7 @@ namespace xISOBurn.Core
 
     /// <summary>
     /// Multi-pass, resumable disc rescue in the style of GNU ddrescue, written for what the console
-    /// showed (docs/milestone-2.md): on the damaged area of the test DVD one 16-sector ECC block failed
+    /// showed (docs/how-it-works.md): on the damaged area of the test DVD one 16-sector ECC block failed
     /// on every revolution (~64 sectors), each failing READ took ~6 s, and retries recovered very little.
     /// Retrying every sector immediately cost ~10 minutes per revolution, so instead:
     ///
@@ -134,6 +138,10 @@ namespace xISOBurn.Core
         private long _refused;
         private bool _refusalNoticeLogged;
 
+        // CSS (docs/how-it-works.md): authenticated session that descrambles sectors before they are written.
+        private const int MaxReauthentications = 20;
+        private CssSession _css;
+
         /// <summary>File names used for a disc (also used by the UI to look for a previous rescue).</summary>
         public static string BaseNameFor(CopyConfig cfg, DiscProbe probe)
         {
@@ -180,15 +188,14 @@ namespace xISOBurn.Core
             _log.Section("Rescue");
             _log.Info("Settings: " + _cfg.Describe());
             LoadOrCreateMap(total);
-            if (_probe.Cpst == 1)
-                _log.Info("This disc is CSS-protected: the drive is expected to refuse the scrambled video sectors, " +
-                          "and the image will not play. xISOBurn does not decrypt CSS.");
+            bool resumedWithData = _map.Count(SectorState.Ok) > 0;
             _log.Info("Work range: LBA " + first + " to " + (end - 1) + (first > 0 || end < total ? " (partial range)" : " (whole disc)"));
             _sw.Start();
 
             try
             {
-                await OpenDestinationAsync(total);
+                await OpenImageForCopyAsync(total);
+                if (_probe.Cpst == 1) await StartCssAsync();
                 await LogAndApplyDriveRetriesAsync();
 
                 if (_map.CountIn(SectorState.Untried, first, end) > 0)
@@ -233,6 +240,11 @@ namespace xISOBurn.Core
                 {
                     if (slowed) await SetSpeedAsync(0xFFFF);
                 }
+
+                // A resumed copy may hold video sectors written scrambled (by an older version, or with
+                // DecryptCss off): decrypt them in the image file, so the image is consistent.
+                if (_css != null && _image != null && resumedWithData)
+                    await DecryptImagePassAsync();
 
                 result.Finished = _map.Count(SectorState.Untried) == 0 && _map.Count(SectorState.Pending) == 0 &&
                                   (_map.RetryPassesDone >= _cfg.RetryPasses || _map.Count(SectorState.Bad) == 0);
@@ -288,11 +300,21 @@ namespace xISOBurn.Core
             result.RetriedThisRun = _retried;
             result.RecoveredThisRun = _recovered;
             result.RefusedThisRun = _refused;
+            result.CssDecrypting = _css != null;
+            if (_css != null)
+            {
+                result.CssDescrambled = _css.Descrambled;
+                result.CssLeftScrambled = _css.LeftScrambled;
+            }
 
             _log.Section("Rescue result");
             if (_refused > 0)
                 _log.Info("Quick refusals this run: " + _refused + " failed read(s) came back in under " + RefusalMaxMs +
                           " ms. That is the drive refusing the area (copy protection or region), not disc damage.");
+            if (_css != null)
+                _log.Info("CSS this run: " + _css.Descrambled + " sector(s) decrypted" +
+                          (_css.LeftScrambled > 0 ? ", " + _css.LeftScrambled + " left scrambled (no title key)" : "") +
+                          (_css.Reauthentications > 0 ? ", " + _css.Reauthentications + " re-authentication(s)" : "") + ".");
             if (_retried > 0)
                 _log.Info("Retries this run: " + _recovered + " of " + _retried + " sector(s) recovered.");
             _log.Info(result.Finished ? "Nothing left to try." : result.Cancelled ? "Cancelled; run again to resume." :
@@ -324,13 +346,8 @@ namespace xISOBurn.Core
 
                 if (loaded != null && _cfg.WriteImage && loaded.Count(SectorState.Ok) > 0)
                 {
-                    // The data of every Ok sector must be in the local image.
-                    if (loaded.Destination == "pc")
-                    {
-                        reason = "the map is from a copy that was sent to the old PC receiver";
-                        loaded = null;
-                    }
-                    else if (!File.Exists(_imagePath))
+                    // The data of every Ok sector must be in the image.
+                    if (!File.Exists(_imagePath))
                     {
                         reason = "the map says sectors were read, but the image " + _imageName + " is missing";
                         loaded = null;
@@ -339,7 +356,6 @@ namespace xISOBurn.Core
                 if (loaded != null)
                 {
                     _map = loaded;
-                    _map.Destination = "local";
                     _log.Info("Resuming from " + Path.GetFileName(_mapPath) + ": " + _map.Summary());
                     return;
                 }
@@ -348,7 +364,7 @@ namespace xISOBurn.Core
                 File.Move(_mapPath, old);
                 _log.Info("Existing map not usable (" + reason + "); renamed to " + Path.GetFileName(old) + ", starting over.");
             }
-            _map = new SectorStateMap(total, _probe.VolumeLabel) { Destination = "local" };
+            _map = new SectorStateMap(total, _probe.VolumeLabel);
             _log.Info("New rescue: " + total + " sectors.");
         }
 
@@ -357,7 +373,7 @@ namespace xISOBurn.Core
             return _cfg.WriteImage ? _imageName : null;
         }
 
-        private Task OpenDestinationAsync(long total)
+        private Task OpenImageForCopyAsync(long total)
         {
             if (!_cfg.WriteImage)
             {
@@ -531,8 +547,75 @@ namespace xISOBurn.Core
                                            (uint)_cfg.TimeoutSeconds);
             if (r.Sense != null && r.Sense.IsNoMedium)
                 throw new MediumRemovedException("Disc removed or no media in the drive: " + r.Sense);
+            if (IsRefusal(r) && _css != null && _css.Reauthentications < MaxReauthentications &&
+                await _css.ReauthenticateAsync())
+            {
+                // The drive dropped the authentication (e.g. after a reset); read once more with it back.
+                r = await _drive.SendAsync(ScsiCommands.Read10((uint)lba, count), count * SectorSize, _buffer, 0,
+                                           (uint)_cfg.TimeoutSeconds);
+            }
             if (IsRefusal(r)) NoteRefusal(lba);
             return r;
+        }
+
+        /// <summary>
+        /// CSS-protected disc: authenticate with the drive and get the keys, so the drive serves the video
+        /// sectors and StoreAsync can decrypt them. If that fails the copy goes on without it.
+        /// </summary>
+        private async Task StartCssAsync()
+        {
+            if (!_cfg.DecryptCss)
+            {
+                _log.Info("This disc is CSS-protected and DecryptCss is off: the drive is expected to refuse the video sectors.");
+                return;
+            }
+            var session = new CssSession(_drive, _log, (uint)_cfg.TimeoutSeconds);
+            if (await session.StartAsync(_probe.Files, _ct))
+                _css = session;
+            else
+                _log.Info("CSS could not be set up (see above). The copy goes on, but the drive will probably refuse the video sectors.");
+        }
+
+        /// <summary>
+        /// Reads the VOB ranges back from the image file and decrypts, in place, any sector still
+        /// scrambled. Reads only the local file, not the disc.
+        /// </summary>
+        private async Task DecryptImagePassAsync()
+        {
+            long total = 0;
+            foreach (var k in _css.Keys) total += k.End - k.Start;
+            BeginPhase("Decrypt pass: VOB sectors already in the image", total);
+            const int Chunk = 64;
+            var buf = new byte[Chunk * SectorSize];
+            long fixedSectors = 0;
+            foreach (var k in _css.Keys)
+            {
+                for (long lba = k.Start; lba < k.End; lba += Chunk)
+                {
+                    _ct.ThrowIfCancellationRequested();
+                    int n = (int)Math.Min(Chunk, k.End - lba);
+                    _image.Seek(lba * SectorSize, SeekOrigin.Begin);
+                    int got = 0;
+                    while (got < n * SectorSize)
+                    {
+                        int r = await _image.ReadAsync(buf, got, n * SectorSize - got);
+                        if (r <= 0) break;
+                        got += r;
+                    }
+                    int sectors = got / SectorSize;
+                    int done = _css.Descramble(lba, buf, sectors);
+                    if (done > 0)
+                    {
+                        _image.Seek(lba * SectorSize, SeekOrigin.Begin);
+                        await _image.WriteAsync(buf, 0, sectors * SectorSize);
+                        fixedSectors += done;
+                    }
+                    _phaseDone += n;
+                    Report(lba);
+                }
+            }
+            _log.Info("Decrypt pass: " + fixedSectors.ToString("N0") + " scrambled sector(s) in the image were decrypted.");
+            EndPhase();
         }
 
         /// <summary>
@@ -554,8 +637,9 @@ namespace xISOBurn.Core
                 _refusalNoticeLogged = true;
                 _log.Info("NOTE: the drive is refusing reads at once (around LBA " + lba + "), with no error detail. " +
                           "This is not disc damage: it is what copy protection (CSS) or a region mismatch looks like. " +
-                          (_probe.Cpst == 1 ? "This disc is CSS-protected, so the video files cannot be read. "
-                                            : "") +
+                          (_probe.Cpst != 1 ? "" :
+                           _css != null ? "The drive was authenticated for CSS but still refuses this area (region?). " :
+                                          "CSS could not be set up for this disc (see the CSS section of the log). ") +
                           "Retrying will not help these sectors.");
             }
         }
@@ -578,6 +662,7 @@ namespace xISOBurn.Core
         {
             if (_image != null)
             {
+                if (_css != null) _css.Descramble(lba, _buffer, count);
                 _image.Seek(lba * SectorSize, SeekOrigin.Begin);
                 _image.Write(_buffer, 0, count * SectorSize);
             }

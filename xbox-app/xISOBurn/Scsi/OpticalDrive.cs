@@ -60,7 +60,6 @@ namespace xISOBurn.Scsi
         /// <summary>Largest data transfer this object accepts (buffer size).</summary>
         public int MaxTransferBytes { get; private set; }
         public string DeviceId { get; private set; }
-        public uint ControlCode { get { return _code.ControlCode; } }
 
         private OpticalDrive(CustomDevice device, string id, int maxTransferBytes)
         {
@@ -115,7 +114,7 @@ namespace xISOBurn.Scsi
             {
                 var result = await SendCoreAsync(cdb, dataLength, dest, destOffset, timeoutSeconds, null);
 
-                // In the spike, reads past the end of the disc came back as a "short response (3 bytes)"
+                // On the console, reads past the end of the disc came back as a "short response (3 bytes)"
                 // with no sense data. In that case we ask for the sense explicitly (REQUEST SENSE, 0x03).
                 // If the driver already consumed it (auto-sense), the drive answers "NO SENSE" and the
                 // information is lost, but trying costs little: it is fast and has no side effects.

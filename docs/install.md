@@ -8,10 +8,10 @@ Portal (a web page served by the console) installs it.
 1. Push to `master`, or start the workflow by hand: **Actions** tab → **build** → **Run workflow**.
 2. Wait for the **Xbox app (UWP x64)** job to finish. It takes 5–10 minutes because the .NET Native
    compilation is slow.
-3. On the run page, download the **`xISOBurn-xbox-0.1.N.0`** artifact and unzip it. You only need:
+3. On the run page, download the **`xISOBurn-xbox-1.0.N.0`** artifact and unzip it. You only need:
    ```
-   package\xISOBurn_0.1.N.0_x64_Test\
-       xISOBurn_0.1.N.0_x64.msix                  (the app)
+   package\xISOBurn_1.0.N.0_x64_Test\
+       xISOBurn_1.0.N.0_x64.msix                  (the app)
        Dependencies\x64\*.appx                    (.NET Native runtime and VCLibs, 3 files)
    ```
    You can ignore everything else: the `arm64`/`x86` dependencies, the PC install scripts and the
@@ -53,13 +53,14 @@ If it doesn't open:
 ## 4. Install the app
 
 1. On the **Home** page, in the **My games & apps** box, click **Add**.
-2. Choose `xISOBurn_0.1.N.0_x64.msix` and click **Next**.
+2. Choose `xISOBurn_1.0.N.0_x64.msix` and click **Next**.
 3. Under dependencies, add **all three** files from `Dependencies\x64\` and click **Start**.
 4. The app appears in the Dev Home list as "xISOBurn".
 
 **Updating:** while no fixed signing certificate is configured, each build is signed with a different
 certificate. If installing a newer version complains about the signature, first remove the old one:
-in **My games & apps**, click the three dots next to xISOBurn → **Remove**.
+in **My games & apps**, click the three dots next to xISOBurn → **Remove**. Removing the app also deletes
+its LocalState, including the copies stored on the Xbox: download them first.
 
 To sign every build with the same certificate, create a `.pfx` with `Subject = CN=xISOBurn` and add
 two repository secrets: `SIGNING_PFX_BASE64` (the file encoded in base64) and
@@ -73,5 +74,5 @@ In the Device Portal, open **File explorer** (left menu) → **LocalAppData** �
 | File | What it is |
 |------|------------|
 | `xisoburn-YYYYMMDD-HHMMSS.log` | Log of one app session (detection and copy) |
-| `config.json` | Copy settings (see [milestone-2.md](milestone-2.md)) |
+| `config.json` | Settings (see [how-it-works.md](how-it-works.md#configjson)) |
 | `<VOLUME>.iso` / `.map` / `.sha256` | The copy, the map of unreadable sectors and the hash |
