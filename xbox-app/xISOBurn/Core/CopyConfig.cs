@@ -49,6 +49,15 @@ namespace xISOBurn.Core
         public bool WriteImage = true;
         /// <summary>File name without extension. Empty = the disc's volume label.</summary>
         public string OutputName = "";
+        /// <summary>"pc" = send the image to the receiver on the PC (milestone 3); "local" = write it to LocalState.</summary>
+        public string Destination = "pc";
+        /// <summary>IP address (or name) of the PC running xisoburn-receiver.</summary>
+        public string ReceiverHost = "";
+        public int ReceiverPort = 8770;
+        /// <summary>Shared secret printed by the receiver when it starts.</summary>
+        public string ReceiverToken = "";
+
+        public bool SendToPc { get { return Destination == "pc"; } }
 
         public static CopyConfig Load(string folder, out string message)
         {
@@ -80,6 +89,10 @@ namespace xISOBurn.Core
                 cfg.SectorLimit = (long)o.GetNamedNumber("SectorLimit", cfg.SectorLimit);
                 cfg.WriteImage = o.GetNamedBoolean("WriteImage", cfg.WriteImage);
                 cfg.OutputName = o.GetNamedString("OutputName", cfg.OutputName);
+                cfg.Destination = o.GetNamedString("Destination", cfg.Destination);
+                cfg.ReceiverHost = o.GetNamedString("ReceiverHost", cfg.ReceiverHost);
+                cfg.ReceiverPort = (int)o.GetNamedNumber("ReceiverPort", cfg.ReceiverPort);
+                cfg.ReceiverToken = o.GetNamedString("ReceiverToken", cfg.ReceiverToken);
             }
             catch (Exception ex)
             {
@@ -103,10 +116,14 @@ namespace xISOBurn.Core
             int rc = DriveReadRetryCount < 0 ? -1 : Math.Min(255, DriveReadRetryCount);
             long ss = Math.Max(0, StartSector);
             long sl = Math.Max(0, SectorLimit);
+            string dest = (Destination ?? "").Trim().ToLowerInvariant() == "local" ? "local" : "pc";
+            int port = ReceiverPort >= 1 && ReceiverPort <= 65535 ? ReceiverPort : 8770;
             bool changed = spr != SectorsPerRead || to != TimeoutSeconds || rp != RetryPasses || rs != RetryReadSpeedKBps ||
-                           rc != DriveReadRetryCount || ss != StartSector || sl != SectorLimit;
+                           rc != DriveReadRetryCount || ss != StartSector || sl != SectorLimit || dest != Destination || port != ReceiverPort;
             SectorsPerRead = spr; TimeoutSeconds = to; RetryPasses = rp; RetryReadSpeedKBps = rs;
-            DriveReadRetryCount = rc; StartSector = ss; SectorLimit = sl;
+            DriveReadRetryCount = rc; StartSector = ss; SectorLimit = sl; Destination = dest; ReceiverPort = port;
+            ReceiverHost = (ReceiverHost ?? "").Trim();
+            ReceiverToken = (ReceiverToken ?? "").Trim();
             return changed;
         }
 
@@ -125,7 +142,11 @@ namespace xISOBurn.Core
             sb.Append("  \"StartSector\": ").Append(StartSector.ToString(inv)).Append(",\n");
             sb.Append("  \"SectorLimit\": ").Append(SectorLimit.ToString(inv)).Append(",\n");
             sb.Append("  \"WriteImage\": ").Append(WriteImage ? "true" : "false").Append(",\n");
-            sb.Append("  \"OutputName\": ").Append(JsonValue.CreateStringValue(OutputName ?? "").Stringify()).Append("\n");
+            sb.Append("  \"OutputName\": ").Append(JsonValue.CreateStringValue(OutputName ?? "").Stringify()).Append(",\n");
+            sb.Append("  \"Destination\": ").Append(JsonValue.CreateStringValue(Destination ?? "pc").Stringify()).Append(",\n");
+            sb.Append("  \"ReceiverHost\": ").Append(JsonValue.CreateStringValue(ReceiverHost ?? "").Stringify()).Append(",\n");
+            sb.Append("  \"ReceiverPort\": ").Append(ReceiverPort.ToString(inv)).Append(",\n");
+            sb.Append("  \"ReceiverToken\": ").Append(JsonValue.CreateStringValue(ReceiverToken ?? "").Stringify()).Append("\n");
             sb.Append("}\n");
             File.WriteAllText(Path.Combine(folder, FileName), sb.ToString(), new UTF8Encoding(false));
         }
@@ -137,7 +158,8 @@ namespace xISOBurn.Core
                    " | retry speed " + (RetryReadSpeedKBps > 0 ? RetryReadSpeedKBps + " kB/s" : "unchanged") +
                    " | drive retries " + (DriveReadRetryCount >= 0 ? DriveReadRetryCount.ToString() : "unchanged") +
                    " | range " + StartSector + "+" + (SectorLimit > 0 ? SectorLimit.ToString() : "end") +
-                   " | write image: " + (WriteImage ? "yes" : "no");
+                   " | write image: " + (WriteImage ? "yes" : "no") +
+                   " | destination: " + (SendToPc ? "PC " + (ReceiverHost.Length > 0 ? ReceiverHost : "(not set)") + ":" + ReceiverPort : "LocalState");
         }
     }
 }

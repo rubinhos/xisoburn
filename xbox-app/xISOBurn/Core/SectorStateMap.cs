@@ -32,6 +32,8 @@ namespace xISOBurn.Core
         public long TotalSectors { get; private set; }
         public string Volume { get; private set; }
         public int RetryPassesDone;
+        /// <summary>Where the data of the Ok sectors lives: "local" (LocalState image) or "pc" (receiver).</summary>
+        public string Destination = "";
 
         public SectorStateMap(long totalSectors, string volume)
         {
@@ -95,6 +97,29 @@ namespace xISOBurn.Core
             return n;
         }
 
+        /// <summary>
+        /// Marks as Untried every Ok sector that is not inside the given sorted [start, end) ranges
+        /// (what the PC receiver reports it has). Keeps the map honest if the ISO on the PC was deleted,
+        /// moved, or never got some chunks. Returns how many sectors were demoted.
+        /// </summary>
+        public long DemoteOkNotIn(List<long[]> ranges)
+        {
+            long demoted = 0;
+            int r = 0;
+            for (long i = 0; i < TotalSectors; i++)
+            {
+                if (_state[i] != (byte)SectorState.Ok) continue;
+                while (r < ranges.Count && ranges[r][1] <= i) r++;
+                bool inside = r < ranges.Count && ranges[r][0] <= i && i < ranges[r][1];
+                if (!inside)
+                {
+                    Set(i, 1, SectorState.Untried, null);
+                    demoted++;
+                }
+            }
+            return demoted;
+        }
+
         public string Summary()
         {
             return "ok " + Count(SectorState.Ok).ToString("N0") + " (" + Percent(Count(SectorState.Ok)) + ")" +
@@ -123,6 +148,7 @@ namespace xISOBurn.Core
             sb.Append("# volume: ").Append(Volume).Append('\n');
             sb.Append("# total_sectors: ").Append(TotalSectors.ToString(inv)).Append('\n');
             sb.Append("# image: ").Append(imageName ?? "(not written)").Append('\n');
+            sb.Append("# destination: ").Append(Destination).Append('\n');
             sb.Append("# retry_passes_done: ").Append(RetryPassesDone.ToString(inv)).Append('\n');
             sb.Append("# written: ").Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append('\n');
             sb.Append("# summary: ").Append(Summary()).Append('\n');
@@ -169,6 +195,7 @@ namespace xISOBurn.Core
             }
             long total = -1;
             string volume = "";
+            string destination = "";
             int passes = 0;
             foreach (var line in lines)
             {
@@ -177,6 +204,7 @@ namespace xISOBurn.Core
                 if (Header(line, "total_sectors", out v)) long.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out total);
                 else if (Header(line, "volume", out v)) volume = v;
                 else if (Header(line, "retry_passes_done", out v)) int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out passes);
+                else if (Header(line, "destination", out v)) destination = v;
             }
             if (total != expectedTotal)
             {
@@ -184,7 +212,8 @@ namespace xISOBurn.Core
                 return null;
             }
 
-            var map = new SectorStateMap(total, volume) { RetryPassesDone = passes };
+            // Maps written before milestone 3 have no destination line: their data is in LocalState.
+            var map = new SectorStateMap(total, volume) { RetryPassesDone = passes, Destination = destination.Length > 0 ? destination : "local" };
             long covered = 0;
             foreach (var raw in lines)
             {

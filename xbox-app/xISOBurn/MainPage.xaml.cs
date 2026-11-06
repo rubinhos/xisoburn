@@ -47,7 +47,9 @@ namespace xISOBurn
             var cfg = CopyConfig.Load(_folder, out msg);
             _log.Info(msg);
             ConfigText.Text = cfg.Describe();
-            StatusText.Text = "Insert the disc and choose \"Detect disc\". Files and logs: " + _folder;
+            StatusText.Text = cfg.SendToPc && cfg.ReceiverHost.Length == 0
+                ? "Start xisoburn-receiver on the PC, then open Settings and enter its address and token."
+                : "Insert the disc and choose \"Detect disc\". Logs: " + _folder;
 
             Loaded += (s, e) => DetectButton.Focus(FocusState.Programmatic);
             // On Xbox, the B button raises BackRequested. Unhandled, the system may close the app mid-copy.
@@ -84,6 +86,7 @@ namespace xISOBurn
             CopyButton.IsEnabled = !busy;
             RetryButton.IsEnabled = !busy && _failedSectors > 0;
             ScanButton.IsEnabled = !busy;
+            SettingsButton.IsEnabled = !busy;
             CancelButton.IsEnabled = copying;
             if (copying) CancelButton.Focus(FocusState.Programmatic);
         }
@@ -220,6 +223,11 @@ namespace xISOBurn
                 var cfg = CopyConfig.Load(_folder, out msg);
                 _log.Info(msg);
                 ConfigText.Text = cfg.Describe();
+                if (cfg.WriteImage && cfg.SendToPc && cfg.ReceiverHost.Length == 0)
+                {
+                    StatusText.Text = "Open Settings and enter the PC address (or choose LocalState as the destination).";
+                    return;
+                }
 
                 // Detect again: the disc may have been swapped since the last detection.
                 if (!await DetectAsync((uint)cfg.TimeoutSeconds))
@@ -330,6 +338,137 @@ namespace xISOBurn
                 SetBusy(false, false);
                 ScanButton.Focus(FocusState.Programmatic);
             }
+        }
+
+        // ------------------------------------------------------------ settings
+
+        private async void SettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_busy) return;
+            string msg;
+            var cfg = CopyConfig.Load(_folder, out msg);
+            SelectByTag(DestinationBox, cfg.Destination);
+            HostBox.Text = cfg.ReceiverHost;
+            PortBox.Text = cfg.ReceiverPort.ToString();
+            TokenBox.Text = cfg.ReceiverToken;
+            OutputNameBox.Text = cfg.OutputName;
+            WriteImageBox.IsChecked = cfg.WriteImage;
+            SelectByTag(SectorsPerReadBox, cfg.SectorsPerRead.ToString());
+            TimeoutBox.Text = cfg.TimeoutSeconds.ToString();
+            SkipBox.IsChecked = cfg.SkipOnErrors;
+            RetryPassesBox.Text = cfg.RetryPasses.ToString();
+            SelectByTag(RetrySpeedBox, cfg.RetryReadSpeedKBps.ToString());
+            SelectByTag(DriveRetryBox, cfg.DriveReadRetryCount.ToString());
+            StartBox.Text = cfg.StartSector.ToString();
+            LimitBox.Text = cfg.SectorLimit.ToString();
+            SettingsError.Text = "";
+            TestText.Text = "";
+            await SettingsDialog.ShowAsync();
+            SettingsButton.Focus(FocusState.Programmatic);
+        }
+
+        private void SettingsDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
+        {
+            string error;
+            var cfg = ReadSettings(out error);
+            if (cfg == null)
+            {
+                SettingsError.Text = error;
+                args.Cancel = true; // keep the dialog open so the value can be fixed
+                return;
+            }
+            cfg.Save(_folder);
+            string msg;
+            cfg = CopyConfig.Load(_folder, out msg); // normalises the values exactly as a run will see them
+            ConfigText.Text = cfg.Describe();
+            _log.Info("Settings saved: " + cfg.Describe());
+            StatusText.Text = "Settings saved. They apply from the next run; no restart needed.";
+        }
+
+        /// <summary>Builds a config from the dialog; null (with a message) if a field is invalid.</summary>
+        private CopyConfig ReadSettings(out string error)
+        {
+            error = null;
+            string msg;
+            var cfg = CopyConfig.Load(_folder, out msg);
+            cfg.Destination = TagOf(DestinationBox, "pc");
+            cfg.ReceiverHost = HostBox.Text.Trim();
+            cfg.ReceiverToken = TokenBox.Text.Trim();
+            cfg.OutputName = OutputNameBox.Text.Trim();
+            cfg.WriteImage = WriteImageBox.IsChecked == true;
+            cfg.SkipOnErrors = SkipBox.IsChecked == true;
+            cfg.SectorsPerRead = int.Parse(TagOf(SectorsPerReadBox, "32"));
+            cfg.RetryReadSpeedKBps = int.Parse(TagOf(RetrySpeedBox, "1385"));
+            cfg.DriveReadRetryCount = int.Parse(TagOf(DriveRetryBox, "-1"));
+
+            int port, timeout, passes;
+            long start, limit;
+            if (!int.TryParse(PortBox.Text.Trim(), out port) || port < 1 || port > 65535) error = "Port must be a number from 1 to 65535.";
+            else if (!int.TryParse(TimeoutBox.Text.Trim(), out timeout) || timeout < 5 || timeout > 120) error = "Timeout must be 5 to 120 seconds.";
+            else if (!int.TryParse(RetryPassesBox.Text.Trim(), out passes) || passes < 0 || passes > 100) error = "Retry passes must be 0 to 100.";
+            else if (!long.TryParse(StartBox.Text.Trim(), out start) || start < 0) error = "First sector must be 0 or more.";
+            else if (!long.TryParse(LimitBox.Text.Trim(), out limit) || limit < 0) error = "Sectors must be 0 (whole disc) or more.";
+            else if (cfg.SendToPc && cfg.ReceiverHost.Length == 0) error = "Enter the PC address, or choose LocalState as the destination.";
+            else if (cfg.OutputName.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0) error = "The file name contains characters that are not allowed.";
+            else
+            {
+                cfg.ReceiverPort = port;
+                cfg.TimeoutSeconds = timeout;
+                cfg.RetryPasses = passes;
+                cfg.StartSector = start;
+                cfg.SectorLimit = limit;
+                return cfg;
+            }
+            return null;
+        }
+
+        private async void TestButton_Click(object sender, RoutedEventArgs e)
+        {
+            int port;
+            string host = HostBox.Text.Trim();
+            if (host.Length == 0 || !int.TryParse(PortBox.Text.Trim(), out port))
+            {
+                TestText.Text = "Enter the PC address and port first.";
+                return;
+            }
+            TestButton.IsEnabled = false;
+            TestText.Text = "Connecting...";
+            try
+            {
+                using (var client = new ReceiverClient(host, port, TokenBox.Text.Trim()))
+                {
+                    var o = await client.HelloAsync();
+                    TestText.Text = "OK: the receiver saves to " + o.GetNamedString("out", "?");
+                }
+            }
+            catch (ReceiverException ex) when (ex.Status == 401)
+            {
+                TestText.Text = "Connected, but the token is wrong.";
+            }
+            catch (Exception ex)
+            {
+                TestText.Text = "Failed: " + ex.Message + " (is the receiver running, and the firewall open?)";
+            }
+            finally
+            {
+                TestButton.IsEnabled = true;
+            }
+        }
+
+        private static void SelectByTag(ComboBox box, string tag)
+        {
+            box.SelectedIndex = 0;
+            for (int i = 0; i < box.Items.Count; i++)
+            {
+                var item = box.Items[i] as ComboBoxItem;
+                if (item != null && (item.Tag as string) == tag) { box.SelectedIndex = i; return; }
+            }
+        }
+
+        private static string TagOf(ComboBox box, string fallback)
+        {
+            var item = box.SelectedItem as ComboBoxItem;
+            return item != null && item.Tag is string ? (string)item.Tag : fallback;
         }
 
         private void CancelButton_Click(object sender, RoutedEventArgs e)

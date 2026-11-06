@@ -12,10 +12,10 @@ It's useful when your PC's DVD drive fails on a disc (SCSI errors such as
 `MEDIUM ERROR / UNRECOVERED READ ERROR`): the Xbox drive becomes a second reader. The destination
 is the PC, over the network, because files on USB storage are limited to about 2 GB in Developer Mode.
 
-> **Current status: milestone 2.** The app rescues the disc into a local file on the Xbox
-> (LocalState). It works in multiple resumable passes in the style of `ddrescue`: the easy data first,
-> then the damaged areas, with a map of every sector and a SHA-256 of the final image. There's no
-> network yet.
+> **Current status: milestone 3.** The app sends the disc to `xisoburn-receiver` on your PC over
+> the local network. It reads in multiple resumable passes in the style of `ddrescue`: the easy data
+> first, then the damaged areas. Every block is verified with SHA-256 on arrival, and the PC keeps a
+> map of every sector and the SHA-256 of the final ISO. Settings can be changed on screen.
 
 ## Documentation
 
@@ -24,6 +24,8 @@ is the PC, over the network, because files on USB storage are limited to about 2
 | [docs/install.md](docs/install.md) | Build (GitHub Actions), Device Portal access, installing the app, downloading logs |
 | [docs/spike.md](docs/spike.md) | Milestone 1: the feasibility test and its results on a real Series X |
 | [docs/milestone-2.md](docs/milestone-2.md) | Milestone 2: results of the first full read, the multi-pass rescue, `.map` format, `config.json`, test plan |
+| [docs/milestone-3.md](docs/milestone-3.md) | Milestone 3: sending to the PC, settings screen, protocol, integrity, test plan |
+| [pc-receiver/README.md](pc-receiver/README.md) | Running the PC receiver, Windows Firewall, the files it writes |
 
 ## Repository layout
 
@@ -31,11 +33,11 @@ is the PC, over the network, because files on USB storage are limited to about 2
 |--------|----------|
 | `xbox-app/` | UWP project in C# (`xISOBurn.sln`) |
 | `xbox-app/xISOBurn/Scsi/` | Drive access: `Windows.Devices.Custom` + SCSI pass-through |
-| `xbox-app/xISOBurn/Core/` | Disc detection, multi-pass rescue, sector state map, settings |
+| `xbox-app/xISOBurn/Core/` | Disc detection, multi-pass rescue, sector state map, settings, receiver client |
 | `xbox-app/tools/make-assets.ps1` | Builds the package images from `designer.png` |
 | `docs/` | Notes and test results |
 | `.github/workflows/build.yml` | Build and packaging on GitHub Actions |
-| `pc-receiver/` | PC receiver (milestone 3) |
+| `pc-receiver/` | PC receiver (Python, standard library only; built as an .exe by the workflow) and its tests |
 
 ## Output format
 

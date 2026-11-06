@@ -55,11 +55,15 @@
 
   <Capabilities>
     <!--
+      privateNetworkClientServer: connections to the local network (home/work), which is where the
+      PC receiver lives. internetClient is not needed: the app never talks to the internet.
+    -->
+    <Capability Name="privateNetworkClientServer" />
+    <!--
       Both capabilities below come from the XBSX2 Package.appxmanifest (PR #11):
       - "optical": device capability for the optical drive;
       - 53f56308-b6bf-11d0-94f2-00a0c91efb8b: the CD-ROM device interface class GUID
         (GUID_DEVINTERFACE_CDROM), required for Windows.Devices.Custom to open the interface.
-      The network capability (privateNetworkClientServer) comes in milestone 3.
     -->
     <DeviceCapability Name="optical" />
     <DeviceCapability Name="53f56308-b6bf-11d0-94f2-00a0c91efb8b" />

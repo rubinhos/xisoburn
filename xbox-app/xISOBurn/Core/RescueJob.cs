@@ -19,6 +19,12 @@ namespace xISOBurn.Core
         public MediumRemovedException(string message) : base(message) { }
     }
 
+    /// <summary>The PC receiver cannot be reached or refuses the data: the run stops, the map keeps the progress.</summary>
+    internal sealed class ReceiverUnavailableException : Exception
+    {
+        public ReceiverUnavailableException(string message) : base(message) { }
+    }
+
     internal sealed class RescueProgress
     {
         public string Phase;
@@ -82,6 +88,7 @@ namespace xISOBurn.Core
 
         private SectorStateMap _map;
         private FileStream _image;
+        private ReceiverClient _net; // destination = PC
         private string _imageName, _imagePath, _mapPath;
         private byte[] _buffer;
         private IProgress<RescueProgress> _progress;
@@ -138,7 +145,7 @@ namespace xISOBurn.Core
             _imagePath = Path.Combine(_folder, _imageName);
             _mapPath = Path.Combine(_folder, baseName + ".map");
             result.MapPath = _mapPath;
-            result.ImagePath = _cfg.WriteImage ? _imagePath : null;
+            result.ImagePath = !_cfg.WriteImage ? null : _cfg.SendToPc ? _imageName + " on the PC" : _imagePath;
 
             _log.Section("Rescue");
             _log.Info("Settings: " + _cfg.Describe());
@@ -148,7 +155,7 @@ namespace xISOBurn.Core
 
             try
             {
-                OpenImage(total);
+                await OpenDestinationAsync(total);
                 await LogAndApplyDriveRetriesAsync();
 
                 if (_map.CountIn(SectorState.Untried, first, end) > 0)
@@ -207,6 +214,11 @@ namespace xISOBurn.Core
                 result.Error = ex.Message;
                 _log.Info("STOPPED: " + ex.Message);
             }
+            catch (ReceiverUnavailableException ex)
+            {
+                result.Error = ex.Message;
+                _log.Info("STOPPED: " + ex.Message + " Everything acknowledged by the PC is kept; run again to resume.");
+            }
             catch (Exception ex)
             {
                 result.Error = ex.GetType().Name + ": " + ex.Message + " (0x" + ex.HResult.ToString("X8") + ")";
@@ -219,8 +231,37 @@ namespace xISOBurn.Core
                 SaveMap(null);
             }
 
-            // The hash needs the whole image and nothing left to read.
-            if (result.Finished && _cfg.WriteImage && !result.Cancelled && result.Error == null)
+            if (_net != null)
+            {
+                // PC: always send the map (so the PC has it even after a pause); when nothing is left to
+                // try, the receiver also hashes the whole ISO and that hash goes into our map.
+                bool complete = result.Finished && !result.Cancelled && result.Error == null;
+                try
+                {
+                    if (complete) BeginPhase("PC: computing SHA-256 of the ISO", 0);
+                    var o = await _net.FinishAsync(baseName, total, complete, _map.ToText(MapImageName(), null));
+                    if (o.ContainsKey("image")) result.ImagePath = o.GetNamedString("image") + " (on the PC)";
+                    if (complete && o.ContainsKey("sha256") && o.GetNamedValue("sha256").ValueType == Windows.Data.Json.JsonValueType.String)
+                    {
+                        result.Sha256 = o.GetNamedString("sha256");
+                        SaveMap(result.Sha256);
+                        _log.Info("PC: ISO at " + result.ImagePath + ", " + (long)o.GetNamedNumber("missing_sectors", 0) +
+                                  " sector(s) never received (zeros).");
+                    }
+                    else
+                    {
+                        _log.Info("PC: map sent" + (complete ? "" : " (the ISO is hashed when nothing is left to try)") + ".");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.Info("Could not send the map to the PC: " + ex.Message);
+                }
+                _net.Dispose();
+                _net = null;
+            }
+            // Local image: the hash needs the whole image and nothing left to read.
+            else if (result.Finished && _cfg.WriteImage && !result.Cancelled && result.Error == null)
             {
                 try
                 {
@@ -277,14 +318,24 @@ namespace xISOBurn.Core
                 try { loaded = SectorStateMap.Load(_mapPath, total, out reason); }
                 catch (Exception ex) { reason = ex.Message; }
 
-                if (loaded != null && _cfg.WriteImage && !File.Exists(_imagePath) && loaded.Count(SectorState.Ok) > 0)
+                if (loaded != null && !_cfg.SendToPc && _cfg.WriteImage && loaded.Count(SectorState.Ok) > 0)
                 {
-                    reason = "the map says sectors were read, but the image " + _imageName + " is missing";
-                    loaded = null;
+                    // Local image: its data must be here. (For the PC, OpenDestinationAsync checks with the receiver.)
+                    if (loaded.Destination == "pc")
+                    {
+                        reason = "the map's data was sent to the PC, but the destination is now LocalState";
+                        loaded = null;
+                    }
+                    else if (!File.Exists(_imagePath))
+                    {
+                        reason = "the map says sectors were read, but the image " + _imageName + " is missing";
+                        loaded = null;
+                    }
                 }
                 if (loaded != null)
                 {
                     _map = loaded;
+                    _map.Destination = _cfg.SendToPc ? "pc" : "local";
                     _log.Info("Resuming from " + Path.GetFileName(_mapPath) + ": " + _map.Summary());
                     return;
                 }
@@ -293,17 +344,50 @@ namespace xISOBurn.Core
                 File.Move(_mapPath, old);
                 _log.Info("Existing map not usable (" + reason + "); renamed to " + Path.GetFileName(old) + ", starting over.");
             }
-            _map = new SectorStateMap(total, _probe.VolumeLabel);
+            _map = new SectorStateMap(total, _probe.VolumeLabel) { Destination = _cfg.SendToPc ? "pc" : "local" };
             _log.Info("New rescue: " + total + " sectors.");
         }
 
-        private void OpenImage(long total)
+        private string MapImageName()
+        {
+            if (!_cfg.WriteImage) return null;
+            return _cfg.SendToPc ? _imageName + " on the PC receiver " + _cfg.ReceiverHost + ":" + _cfg.ReceiverPort : _imageName;
+        }
+
+        private async Task OpenDestinationAsync(long total)
         {
             if (!_cfg.WriteImage)
             {
                 _log.Info("Read-only mode: the image is not written (data read in this mode is discarded).");
                 return;
             }
+            if (_cfg.SendToPc)
+            {
+                if (_cfg.ReceiverHost.Length == 0)
+                    throw new ReceiverUnavailableException("No PC address set (ReceiverHost).");
+                _net = new ReceiverClient(_cfg.ReceiverHost, _cfg.ReceiverPort, _cfg.ReceiverToken);
+                List<long[]> ranges;
+                try
+                {
+                    ranges = await _net.ReceivedRangesAsync(BaseName(), total);
+                }
+                catch (Exception ex)
+                {
+                    throw new ReceiverUnavailableException("Cannot reach the PC receiver at " + _net.Endpoint + ": " + ex.Message);
+                }
+                long have = 0;
+                foreach (var r in ranges) have += r[1] - r[0];
+                long demoted = _map.DemoteOkNotIn(ranges);
+                _log.Info("PC receiver " + _net.Endpoint + ": it already has " + have.ToString("N0") + " sector(s) of " + _imageName + ".");
+                if (demoted > 0)
+                    _log.Info("  " + demoted.ToString("N0") + " sector(s) marked as read here are missing on the PC; they will be read again.");
+                return;
+            }
+            OpenImage(total);
+        }
+
+        private void OpenImage(long total)
+        {
             _image = new FileStream(_imagePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, 1 << 20);
             if (_image.Length != total * SectorSize)
             {
@@ -335,7 +419,7 @@ namespace xISOBurn.Core
             {
                 // Image data first, then the map that claims it is there.
                 if (_image != null) _image.Flush(true);
-                _map.Save(_mapPath, _cfg.WriteImage ? _imageName : null, sha256);
+                _map.Save(_mapPath, MapImageName(), sha256);
                 _lastMapSave = _sw.Elapsed;
             }
             catch (Exception ex)
@@ -369,7 +453,7 @@ namespace xISOBurn.Core
                     int failedPieces = 0;
                     if (Ok(r, n))
                     {
-                        Store(pos, n);
+                        await StoreAsync(pos, n);
                     }
                     else
                     {
@@ -379,7 +463,7 @@ namespace xISOBurn.Core
                         {
                             int m = (int)Math.Min(EccBlock - p % EccBlock, pos + n - p);
                             var rp = (m == n) ? r : await ReadAsync(p, m);
-                            if (Ok(rp, m)) Store(p, m);
+                            if (Ok(rp, m)) await StoreAsync(p, m);
                             else
                             {
                                 _map.Set(p, m, SectorState.Pending, ErrorText(rp));
@@ -435,7 +519,7 @@ namespace xISOBurn.Core
                 var r = await ReadAsync(pos, 1);
                 if (Ok(r, 1))
                 {
-                    Store(pos, 1);
+                    await StoreAsync(pos, 1);
                     recovered++;
                     _log.Info("Sector " + pos + " recovered (" + phase + ").");
                 }
@@ -474,15 +558,54 @@ namespace xISOBurn.Core
             return r.Sense != null ? r.Sense.Code + " " + r.Sense.Describe() : r.Describe();
         }
 
-        /// <summary>Writes the sectors in _buffer[0..] to the image at their position and marks them Ok.</summary>
-        private void Store(long lba, int count)
+        /// <summary>
+        /// Writes the sectors in _buffer[0..] at their position (local image or PC) and only then marks
+        /// them Ok, so the map never claims data the destination does not have.
+        /// </summary>
+        private async Task StoreAsync(long lba, int count)
         {
             if (_image != null)
             {
                 _image.Seek(lba * SectorSize, SeekOrigin.Begin);
                 _image.Write(_buffer, 0, count * SectorSize);
             }
+            else if (_net != null)
+            {
+                await SendWithRetryAsync(lba, count);
+            }
             _map.Set(lba, count, SectorState.Ok, null);
+        }
+
+        /// <summary>
+        /// Sends one chunk to the PC. Network hiccups (Wi-Fi, receiver restart) are retried with growing
+        /// pauses for about 2 minutes; the data is still in memory, so the disc is not read again.
+        /// Permanent errors (wrong token, other disc with the same name) stop the run immediately.
+        /// </summary>
+        private async Task SendWithRetryAsync(long lba, int count)
+        {
+            const int attempts = 8;
+            for (int attempt = 1; ; attempt++)
+            {
+                _ct.ThrowIfCancellationRequested();
+                try
+                {
+                    await _net.PutChunkAsync(BaseName(), _map.TotalSectors, lba, _buffer, count);
+                    if (attempt > 1) _log.Info("PC: LBA " + lba + " sent on attempt " + attempt + ".");
+                    return;
+                }
+                catch (ReceiverException ex) when (ex.IsPermanent)
+                {
+                    throw new ReceiverUnavailableException("The PC receiver refused the data: " + ex.Message);
+                }
+                catch (Exception ex)
+                {
+                    if (attempt >= attempts)
+                        throw new ReceiverUnavailableException("The PC receiver stopped answering (" + ex.Message + ").");
+                    int wait = Math.Min(30, 1 << attempt); // 2, 4, 8, 16, 30, 30, 30 s
+                    _log.Info("PC: sending LBA " + lba + " failed (" + ex.Message + "); retrying in " + wait + " s.");
+                    await Task.Delay(TimeSpan.FromSeconds(wait), _ct);
+                }
+            }
         }
 
         // ------------------------------------------------------------ drive tuning (experimental)

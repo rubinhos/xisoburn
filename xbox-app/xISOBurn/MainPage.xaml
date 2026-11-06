@@ -23,7 +23,7 @@
         <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="20">
             <Image Source="Assets/Banner.png" Height="56" Stretch="Uniform" HorizontalAlignment="Left"
                    AutomationProperties.Name="xISOBurn"/>
-            <TextBlock Text="Milestone 2 — multi-pass, resumable rescue to a local file (LocalState)"
+            <TextBlock Text="Copy discs to your PC over the local network"
                        FontSize="14" Opacity="0.7" VerticalAlignment="Center"/>
         </StackPanel>
 
@@ -35,6 +35,7 @@
             <!-- Enabled only when a previous rescue of the inserted disc left failed sectors. -->
             <Button x:Name="RetryButton" Content="Retry failed" Click="RetryButton_Click" FontSize="15" Padding="12,5" IsEnabled="False"/>
             <Button x:Name="ScanButton" Content="Scan disc" Click="ScanButton_Click" FontSize="15" Padding="12,5"/>
+            <Button x:Name="SettingsButton" Content="Settings" Click="SettingsButton_Click" FontSize="15" Padding="12,5"/>
         </StackPanel>
 
         <!-- Info panels: small fonts and a fixed maximum height (the details are in the log). -->
@@ -78,5 +79,68 @@
 
         <TextBlock x:Name="StatusText" Grid.Row="4" FontSize="13" TextWrapping="Wrap" MaxLines="2"
                    TextTrimming="CharacterEllipsis" Opacity="0.9"/>
+
+        <!--
+          Settings: every key of config.json. Works with the controller: D-pad moves between fields,
+          A opens the on-screen keyboard on a text box, B closes the dialog without saving.
+          Nothing needs an app restart: config.json is read again at the start of every run.
+        -->
+        <ContentDialog x:Name="SettingsDialog" Title="Settings" PrimaryButtonText="Save" CloseButtonText="Cancel"
+                       DefaultButton="Primary" PrimaryButtonClick="SettingsDialog_PrimaryButtonClick">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="380" Padding="0,0,12,0">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Destination" FontWeight="SemiBold" FontSize="15"/>
+                    <ComboBox x:Name="DestinationBox" Header="Where the image goes" HorizontalAlignment="Stretch">
+                        <ComboBoxItem Content="PC receiver (network)" Tag="pc"/>
+                        <ComboBoxItem Content="LocalState on the Xbox" Tag="local"/>
+                    </ComboBox>
+                    <TextBox x:Name="HostBox" Header="PC address (IP shown by xisoburn-receiver)" PlaceholderText="192.168.0.10"
+                             InputScope="Url"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBox x:Name="PortBox" Header="Port" Width="90" InputScope="Number"/>
+                        <TextBox x:Name="TokenBox" Header="Token" Width="170" PlaceholderText="printed by the receiver"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="TestButton" Content="Test connection" Click="TestButton_Click"/>
+                        <TextBlock x:Name="TestText" VerticalAlignment="Center" FontSize="12" TextWrapping="Wrap" MaxWidth="300"/>
+                    </StackPanel>
+                    <TextBox x:Name="OutputNameBox" Header="File name (empty = the disc's volume label)"/>
+                    <CheckBox x:Name="WriteImageBox" Content="Write the image (off = only test the drive and build the map)"/>
+
+                    <TextBlock Text="Reading" FontWeight="SemiBold" FontSize="15" Margin="0,8,0,0"/>
+                    <ComboBox x:Name="SectorsPerReadBox" Header="Sectors per read" HorizontalAlignment="Stretch">
+                        <ComboBoxItem Content="16 (32 KiB)" Tag="16"/>
+                        <ComboBoxItem Content="32 (64 KiB, default)" Tag="32"/>
+                        <ComboBoxItem Content="48 (96 KiB)" Tag="48"/>
+                        <ComboBoxItem Content="64 (128 KiB)" Tag="64"/>
+                    </ComboBox>
+                    <TextBox x:Name="TimeoutBox" Header="Timeout per command (seconds, 5-120)" InputScope="Number"/>
+                    <CheckBox x:Name="SkipBox" Content="Skip ahead over areas with many errors (filled in later)"/>
+                    <TextBox x:Name="RetryPassesBox" Header="Retry passes over bad sectors (0-100)" InputScope="Number"/>
+                    <ComboBox x:Name="RetrySpeedBox" Header="Drive speed for retries" HorizontalAlignment="Stretch">
+                        <ComboBoxItem Content="Do not change" Tag="0"/>
+                        <ComboBoxItem Content="DVD 1x (1385 kB/s, default)" Tag="1385"/>
+                        <ComboBoxItem Content="DVD 2x (2770 kB/s)" Tag="2770"/>
+                        <ComboBoxItem Content="DVD 4x (5540 kB/s)" Tag="5540"/>
+                    </ComboBox>
+                    <ComboBox x:Name="DriveRetryBox" Header="Drive's own retries per failing read (experimental)" HorizontalAlignment="Stretch">
+                        <ComboBoxItem Content="Do not change (default)" Tag="-1"/>
+                        <ComboBoxItem Content="0 (fastest failures)" Tag="0"/>
+                        <ComboBoxItem Content="1" Tag="1"/>
+                        <ComboBoxItem Content="4" Tag="4"/>
+                        <ComboBoxItem Content="8" Tag="8"/>
+                    </ComboBox>
+
+                    <TextBlock Text="Range (for tests)" FontWeight="SemiBold" FontSize="15" Margin="0,8,0,0"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBox x:Name="StartBox" Header="First sector" Width="130" InputScope="Number"/>
+                        <TextBox x:Name="LimitBox" Header="Sectors (0 = to the end)" Width="150" InputScope="Number"/>
+                    </StackPanel>
+
+                    <TextBlock x:Name="SettingsError" Foreground="#FF6B6B" FontSize="12" TextWrapping="Wrap"/>
+                    <TextBlock Text="Changes apply from the next run; no restart needed." FontSize="12" Opacity="0.7" TextWrapping="Wrap"/>
+                </StackPanel>
+            </ScrollViewer>
+        </ContentDialog>
     </Grid>
 </Page>
