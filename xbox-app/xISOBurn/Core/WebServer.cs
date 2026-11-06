@@ -49,6 +49,11 @@ namespace xISOBurn.Core
 
         public int Port { get; private set; }
 
+        private int _activeDownloads;
+        /// <summary>ISO downloads being sent right now. The UI keeps the screen on while this is above 0, so the
+        /// console does not dim, idle-off or suspend the app in the middle of a download.</summary>
+        public int ActiveDownloads { get { return System.Threading.Volatile.Read(ref _activeDownloads); } }
+
         public WebServer(Logger log, string folder, Func<string> statusHtml, Func<CopyConfig> settings)
         {
             _log = log;
@@ -285,24 +290,32 @@ namespace xISOBurn.Core
                 var sw = Stopwatch.StartNew();
                 var buffer = new byte[FileChunk];
                 long pos = start;
-                while (pos <= end)
+                if (iso) System.Threading.Interlocked.Increment(ref _activeDownloads);
+                try
                 {
-                    int n = (int)Math.Min(buffer.Length, end - pos + 1);
-                    if (live != null && !await WaitForSectorsAsync(name, live, pos, n))
-                        throw new DownloadInterruptedException("download of " + name + " by " + req.Remote + " stopped at " + (pos * 100 / length) +
-                                                               "% because the copy stopped; resume it in the browser after resuming the copy.");
-                    fs.Position = pos;
-                    int read = 0;
-                    while (read < n)
+                    while (pos <= end)
                     {
-                        int r = await fs.ReadAsync(buffer, read, n - read);
-                        if (r <= 0) throw new IOException("file shorter than expected");
-                        read += r;
+                        int n = (int)Math.Min(buffer.Length, end - pos + 1);
+                        if (live != null && !await WaitForSectorsAsync(name, live, pos, n))
+                            throw new DownloadInterruptedException("download of " + name + " by " + req.Remote + " stopped at " + (pos * 100 / length) +
+                                                                   "% because the copy stopped; resume it in the browser after resuming the copy.");
+                        fs.Position = pos;
+                        int read = 0;
+                        while (read < n)
+                        {
+                            int r = await fs.ReadAsync(buffer, read, n - read);
+                            if (r <= 0) throw new IOException("file shorter than expected");
+                            read += r;
+                        }
+                        await output.WriteAsync(buffer, 0, n);
+                        pos += n;
                     }
-                    await output.WriteAsync(buffer, 0, n);
-                    pos += n;
+                    await output.FlushAsync();
                 }
-                await output.FlushAsync();
+                finally
+                {
+                    if (iso) System.Threading.Interlocked.Decrement(ref _activeDownloads);
+                }
                 if (iso)
                 {
                     double secs = Math.Max(0.001, sw.Elapsed.TotalSeconds);

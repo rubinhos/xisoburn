@@ -47,6 +47,9 @@ namespace xISOBurn
         private string _freeSpace = "";
         private DateTime _freeSpaceAt = DateTime.MinValue;
         private string _webUrl = "";
+        // Separate from the copy's DisplayRequest: keeps the screen on while the PC downloads an ISO, so
+        // a download started after the copy finished is not cut by the console dimming or idling off.
+        private DisplayRequest _downloadDisplay;
 
         public MainPage()
         {
@@ -98,9 +101,26 @@ namespace xISOBurn
             }
 
             _webTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            _webTimer.Tick += async (s, e) => { UpdateWebBody(); await RefreshFreeSpaceAsync(); };
+            _webTimer.Tick += async (s, e) => { UpdateWebBody(); UpdateDownloadDisplay(); await RefreshFreeSpaceAsync(); };
             _webTimer.Start();
             UpdateWebBody();
+        }
+
+        private void UpdateDownloadDisplay()
+        {
+            int downloads = _web != null ? _web.ActiveDownloads : 0;
+            if (downloads > 0 && _downloadDisplay == null)
+            {
+                _downloadDisplay = new DisplayRequest();
+                _downloadDisplay.RequestActive();
+                _log.Info("Keeping the screen on while the PC downloads (" + downloads + " download(s)).");
+            }
+            else if (downloads == 0 && _downloadDisplay != null)
+            {
+                _downloadDisplay.RequestRelease();
+                _downloadDisplay = null;
+                _log.Info("Downloads finished; the console may dim and idle as usual again.");
+            }
         }
 
         private void ShowWebAddress()

@@ -39,6 +39,14 @@ receiver, no firewall rule (the browser only makes outgoing connections).
   on screen and on the page (and in `NAME.sha256`). To check the downloaded file on the PC:
   `Get-FileHash .\NAME.iso -Algorithm SHA256` in PowerShell.
 
+## Copy now, download later
+
+You can leave the Xbox copying and download only at the end. Keep the app on screen during the copy
+(the Xbox suspends apps that leave the screen); the app keeps the screen on while it copies. After
+the copy, the console may dim and idle-off as usual. If it does, turn it on and open xISOBurn again:
+the image stays on the Xbox and the page comes back. While an ISO download is running, the app keeps
+the screen on again, so a late download is not cut by the console going idle.
+
 ## Space on the Xbox
 
 The image is reserved at its full size when the copy starts (6.3 GiB for a DVD-9). The test DVD's
