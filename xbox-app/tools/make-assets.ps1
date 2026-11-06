@@ -1,8 +1,7 @@
 # Builds the UWP package images from the artwork in designer.png (repository root).
-# designer.png is rendered from designer.svg (the editable source) by render-designer.ps1.
-# It holds two pieces on a transparent background:
-#   - left:  the app icon (rounded square)  -> tiles, store logo, app list icon, web page favicon
-#   - right: the logo (emblem + "xISOBurn")  -> wide tile, splash screen, in-app banner
+# designer.png holds two pieces on a transparent background:
+#   - left:  the app icon (rounded square)      -> tiles, store logo, app list icon
+#   - right: the logo (disc + "xISOBurn" + tagline) -> wide tile, splash screen, in-app banner
 # Uses System.Drawing from Windows PowerShell 5.1; nothing to install.
 #   powershell -ExecutionPolicy Bypass -File xbox-app\tools\make-assets.ps1
 Add-Type -AssemblyName System.Drawing

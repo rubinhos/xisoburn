@@ -55,7 +55,7 @@ health check, and **Settings** opens the settings.
 | `xbox-app/xISOBurn/Core/` | Disc detection, multi-pass copy, sector map, settings, web server, disc scan |
 | `xbox-app/xISOBurn/Css/` | CSS: C# port of libdvdcss (cipher, tables, drive commands, session) |
 | `xbox-app/xISOBurn/Util/` | Logger and byte helpers |
-| `designer.svg`, `xbox-app/tools/` | Artwork source; `render-designer.ps1` renders it to `designer.png` (with Edge), and `make-assets.ps1` builds the package images |
+| `xbox-app/tools/make-assets.ps1` | Builds the package images from `designer.png` |
 | `.github/workflows/build.yml` | Build and packaging on GitHub Actions |
 
 ## Output
