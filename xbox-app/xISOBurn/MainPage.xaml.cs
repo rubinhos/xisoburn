@@ -79,7 +79,7 @@ namespace xISOBurn
             var cfg = _webCfg;
             try
             {
-                _web = new WebServer(_log, _folder, () => _webBody, () => _webCfg);
+                _web = new WebServer(_log, _folder, () => _webBody, () => _webCfg, RemoteAsync);
                 bool ok = await _web.StartAsync(cfg.WebPort);
                 var addrs = WebServer.LocalAddresses();
                 if (!ok || addrs.Count == 0)
@@ -152,6 +152,19 @@ namespace xISOBurn
             Func<string, string> enc = System.Net.WebUtility.HtmlEncode;
             var sb = new System.Text.StringBuilder();
             sb.Append("<h2>Now on the Xbox</h2>");
+            // The app's buttons, enabled exactly as on the console. The server checks again when one is pressed.
+            Func<string, string, Button, string> button = (action, label, b) =>
+                "<button name=\"do\" value=\"" + action + "\"" + (b.IsEnabled && !_settingsOpen ? "" : " disabled") + ">" + label + "</button>";
+            sb.Append("<form method=\"post\" action=\"/action\" class=\"controls\">")
+              .Append(button("detect", "Detect disc", DetectButton))
+              .Append(button("copy", "Copy / resume", CopyButton))
+              .Append(button("cancel", "Pause / cancel", CancelButton))
+              .Append(button("retry", "Retry failed", RetryButton))
+              .Append(button("scan", "Scan disc", ScanButton))
+              .Append(SettingsButton.IsEnabled && !_settingsOpen
+                  ? "<a href=\"/settings\">Settings</a>"
+                  : "<span class=\"dim\">Settings (unavailable while the app is busy or the dialog is open on the Xbox)</span>")
+              .Append("</form>");
             sb.Append("<div class=\"box\"><b>Disc</b>\n").Append(enc(DiscText.Text)).Append("</div>");
             sb.Append("<div class=\"box\"><b>Progress</b>\n").Append(enc(ProgressText.Text)).Append("</div>");
             sb.Append("<div class=\"box\">").Append(enc(StatusText.Text)).Append("</div>");
@@ -493,7 +506,10 @@ namespace xISOBurn
             LimitBox.Text = cfg.SectorLimit.ToString();
             SettingsError.Text = "";
             _restartNeeded = false;
-            await SettingsDialog.ShowAsync();
+            // While the dialog is open the web page cannot change the settings (one would overwrite the other).
+            _settingsOpen = true;
+            try { await SettingsDialog.ShowAsync(); }
+            finally { _settingsOpen = false; }
 
             if (_restartNeeded)
             {
@@ -526,56 +542,112 @@ namespace xISOBurn
                 args.Cancel = true; // keep the dialog open so the value can be fixed
                 return;
             }
+            StatusText.Text = ApplySettings(cfg, "the console");
+        }
+
+        /// <summary>
+        /// Saves the settings (from the console dialog or the web page) and applies what can change at once.
+        /// Returns the confirmation for the status line or the web page.
+        /// </summary>
+        private string ApplySettings(CopyConfig cfg, string from)
+        {
             cfg.Save(_folder);
             string msg;
             cfg = CopyConfig.Load(_folder, out msg); // normalises the values exactly as a run will see them
             _webCfg = cfg;                            // PIN changes apply to the web page at once
             ShowWebAddress();
             ConfigText.Text = cfg.Describe();
-            _log.Info("Settings saved: " + cfg.Describe());
+            _log.Info("Settings saved from " + from + ": " + cfg.Describe());
             _restartNeeded = _web != null && _web.Port > 0 && cfg.WebPort != _web.Port;
-            StatusText.Text = _restartNeeded ? "Settings saved. Restart the app to use the new web page port."
-                                             : "Settings saved. They apply from the next run.";
+            return _restartNeeded ? "Settings saved. Restart the app to use the new web page port (" + cfg.WebPort + ")."
+                                  : "Settings saved. They apply from the next run.";
         }
 
         /// <summary>Builds a config from the dialog; null (with a message) if a field is invalid.</summary>
         private CopyConfig ReadSettings(out string error)
         {
-            error = null;
             string msg;
-            var cfg = CopyConfig.Load(_folder, out msg);
-            cfg.WebPinRequired = PinRequiredBox.IsChecked == true;
-            cfg.OutputName = OutputNameBox.Text.Trim();
-            cfg.WriteImage = WriteImageBox.IsChecked == true;
-            cfg.DecryptCss = DecryptCssBox.IsChecked == true;
-            cfg.SkipOnErrors = SkipBox.IsChecked == true;
-            cfg.SectorsPerRead = int.Parse(TagOf(SectorsPerReadBox, "32"));
-            cfg.RetryReadSpeedKBps = int.Parse(TagOf(RetrySpeedBox, "1385"));
-            cfg.DriveReadRetryCount = int.Parse(TagOf(DriveRetryBox, "-1"));
-            string pin = PinBox.Text.Trim();
-
-            int port, timeout, passes;
-            long start, limit;
-            bool pinDigits = pin.Length >= 4 && pin.Length <= 8;
-            foreach (char ch in pin) if (ch < '0' || ch > '9') pinDigits = false;
-            if (!int.TryParse(WebPortBox.Text.Trim(), out port) || port < 1024 || port > 65535) error = "The web page port must be a number from 1024 to 65535.";
-            else if (!pinDigits) error = "The PIN must have 4 to 8 digits.";
-            else if (!int.TryParse(TimeoutBox.Text.Trim(), out timeout) || timeout < 5 || timeout > 120) error = "Timeout must be 5 to 120 seconds.";
-            else if (!int.TryParse(RetryPassesBox.Text.Trim(), out passes) || passes < 0 || passes > 100) error = "Retry passes must be 0 to 100.";
-            else if (!long.TryParse(StartBox.Text.Trim(), out start) || start < 0) error = "First sector must be 0 or more.";
-            else if (!long.TryParse(LimitBox.Text.Trim(), out limit) || limit < 0) error = "Sectors must be 0 (whole disc) or more.";
-            else if (cfg.OutputName.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0) error = "The file name contains characters that are not allowed.";
-            else
+            var form = new Dictionary<string, string>
             {
-                cfg.WebPort = port;
-                cfg.WebPin = pin;
-                cfg.TimeoutSeconds = timeout;
-                cfg.RetryPasses = passes;
-                cfg.StartSector = start;
-                cfg.SectorLimit = limit;
-                return cfg;
+                { "WebPort", WebPortBox.Text },
+                { "WebPinRequired", PinRequiredBox.IsChecked == true ? "true" : "false" },
+                { "WebPin", PinBox.Text },
+                { "OutputName", OutputNameBox.Text },
+                { "WriteImage", WriteImageBox.IsChecked == true ? "true" : "false" },
+                { "DecryptCss", DecryptCssBox.IsChecked == true ? "true" : "false" },
+                { "SectorsPerRead", TagOf(SectorsPerReadBox, "32") },
+                { "TimeoutSeconds", TimeoutBox.Text },
+                { "SkipOnErrors", SkipBox.IsChecked == true ? "true" : "false" },
+                { "RetryPasses", RetryPassesBox.Text },
+                { "RetryReadSpeedKBps", TagOf(RetrySpeedBox, "1385") },
+                { "DriveReadRetryCount", TagOf(DriveRetryBox, "-1") },
+                { "StartSector", StartBox.Text },
+                { "SectorLimit", LimitBox.Text },
+            };
+            return CopyConfig.FromForm(CopyConfig.Load(_folder, out msg), form, out error);
+        }
+
+        // ------------------------------------------------------------ remote control (web page)
+
+        private bool _settingsOpen;
+
+        /// <summary>
+        /// Called by the web server (on a thread-pool thread) when a button is pressed on the web page.
+        /// Runs on the UI thread, exactly like pressing the button on the console: the same handlers, the
+        /// same enabled/disabled rules. Long actions (a copy) are started, not waited for.
+        /// </summary>
+        private Task<RemoteReply> RemoteAsync(string action, IDictionary<string, string> form, string remote)
+        {
+            var done = new TaskCompletionSource<RemoteReply>();
+            var ignored = Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+            {
+                try { done.TrySetResult(Remote(action, form, remote)); }
+                catch (Exception ex) { done.TrySetResult(RemoteReply.Refused("Error: " + ex.Message)); }
+            });
+            return done.Task;
+        }
+
+        private RemoteReply Remote(string action, IDictionary<string, string> form, string remote)
+        {
+            if (_settingsOpen)
+                return RemoteReply.Refused("The Settings dialog is open on the Xbox. Close it there first.");
+            Button button;
+            string label;
+            switch (action)
+            {
+                case "detect": button = DetectButton; label = "Detect disc"; break;
+                case "copy": button = CopyButton; label = "Copy / resume"; break;
+                case "retry": button = RetryButton; label = "Retry failed"; break;
+                case "scan": button = ScanButton; label = "Scan disc"; break;
+                case "cancel": button = CancelButton; label = "Pause / cancel"; break;
+                case "settings":
+                {
+                    if (!SettingsButton.IsEnabled)
+                        return RemoteReply.Refused("The app is busy; the settings can be changed when it is idle.");
+                    string error, msg;
+                    var cfg = CopyConfig.FromForm(CopyConfig.Load(_folder, out msg), form, out error);
+                    if (cfg == null) return RemoteReply.Refused(error);
+                    string result = ApplySettings(cfg, "the web page (" + remote + ")");
+                    StatusText.Text = result;
+                    return RemoteReply.Done(result);
+                }
+                default:
+                    return RemoteReply.Refused("Unknown action.");
             }
-            return null;
+
+            if (!button.IsEnabled)
+                return RemoteReply.Refused("\"" + label + "\" is not available right now" +
+                                           (_busy ? " (the app is busy)." : action == "retry" ? " (no failed sectors to retry)." : "."));
+            _log.Info("Web: " + remote + " pressed \"" + label + "\".");
+            switch (action)
+            {
+                case "detect": DetectButton_Click(button, null); break;
+                case "copy": CopyButton_Click(button, null); break;
+                case "retry": RetryButton_Click(button, null); break;
+                case "scan": ScanButton_Click(button, null); break;
+                case "cancel": CancelButton_Click(button, null); break;
+            }
+            return RemoteReply.Done(null);
         }
         private static void SelectByTag(ComboBox box, string tag)
         {
