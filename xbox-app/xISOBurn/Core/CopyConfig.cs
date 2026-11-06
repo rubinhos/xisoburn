@@ -61,6 +61,12 @@ namespace xISOBurn.Core
         public bool WebPinRequired = true;
         /// <summary>4-digit PIN shown on the Xbox screen; generated on first launch.</summary>
         public string WebPin = "";
+        /// <summary>
+        /// Keep the console awake while the app is open (no dimming, no idle power-off). Without it the Xbox
+        /// suspends the app once the console idles, and the web page cannot answer until the app is resumed.
+        /// Applies at once.
+        /// </summary>
+        public bool KeepAwake = false;
 
         public const int DefaultWebPort = 8770;
 
@@ -88,6 +94,7 @@ namespace xISOBurn.Core
             cfg.WriteImage = flag("WriteImage");
             cfg.DecryptCss = flag("DecryptCss");
             cfg.SkipOnErrors = flag("SkipOnErrors");
+            cfg.KeepAwake = flag("KeepAwake");
             cfg.OutputName = get("OutputName");
             string pin = get("WebPin");
 
@@ -156,6 +163,7 @@ namespace xISOBurn.Core
                 cfg.WebPort = (int)o.GetNamedNumber("WebPort", cfg.WebPort);
                 cfg.WebPinRequired = o.GetNamedBoolean("WebPinRequired", cfg.WebPinRequired);
                 cfg.WebPin = o.GetNamedString("WebPin", cfg.WebPin);
+                cfg.KeepAwake = o.GetNamedBoolean("KeepAwake", cfg.KeepAwake);
             }
             catch (Exception ex)
             {
@@ -211,7 +219,8 @@ namespace xISOBurn.Core
             sb.Append("  \"DecryptCss\": ").Append(DecryptCss ? "true" : "false").Append(",\n");
             sb.Append("  \"WebPort\": ").Append(WebPort.ToString(inv)).Append(",\n");
             sb.Append("  \"WebPinRequired\": ").Append(WebPinRequired ? "true" : "false").Append(",\n");
-            sb.Append("  \"WebPin\": ").Append(JsonValue.CreateStringValue(WebPin ?? "").Stringify()).Append("\n");
+            sb.Append("  \"WebPin\": ").Append(JsonValue.CreateStringValue(WebPin ?? "").Stringify()).Append(",\n");
+            sb.Append("  \"KeepAwake\": ").Append(KeepAwake ? "true" : "false").Append("\n");
             sb.Append("}\n");
             File.WriteAllText(Path.Combine(folder, FileName), sb.ToString(), new UTF8Encoding(false));
         }
@@ -225,7 +234,8 @@ namespace xISOBurn.Core
                    " | range " + StartSector + "+" + (SectorLimit > 0 ? SectorLimit.ToString() : "end") +
                    " | write image: " + (WriteImage ? "yes" : "no") +
                    " | decrypt CSS: " + (DecryptCss ? "yes" : "no") +
-                   " | web port " + WebPort + (WebPinRequired ? " with PIN" : " without PIN");
+                   " | web port " + WebPort + (WebPinRequired ? " with PIN" : " without PIN") +
+                   " | keep awake: " + (KeepAwake ? "yes" : "no");
         }
     }
 }
