@@ -174,12 +174,21 @@ the file with every current key, so the file always lists what the app uses.
 The app serves a page on the local network (`StreamSocketListener`, capability
 `privateNetworkClientServer`). The PC browser downloads the copies from it.
 
+
+**Remote control:** the page has the same buttons as the app (**Detect disc**, **Copy / resume**,
+**Pause / cancel**, **Retry failed**, **Scan disc**) and a **Settings** page. A button on the page
+does exactly what the button on the console does, and is disabled when the console's one is. The
+app has to be open on the Xbox: the console suspends apps that leave the screen. The settings can't
+be changed while the app is busy or while the Settings dialog is open on the console.
+
 | Request | What it does |
 |---------|--------------|
 | `GET /` | Main page (or the PIN page). Refreshes every 5 s. |
 | `POST /login` | `pin=NNNN`; sets a cookie. |
 | `GET /files/NAME.iso` (`.map`, `.sha256`, `.log`) | Download, with `Range` / `If-Range`. The ISO download follows a copy that is still running. |
 | `POST /delete` | `name=NAME`: deletes `NAME.iso`, `.map` and `.sha256`. Refused while that disc is being copied. |
+| `POST /action` | `do=detect`, `copy`, `retry`, `scan` or `cancel`: presses that button of the app. Refused when the button is disabled on the console. |
+| `GET /settings`, `POST /settings` | The settings form, with the same fields and checks as the console's Settings dialog. |
 | `GET /favicon.png`, `/favicon.ico` | The app icon. |
 
 - **While copying:** the server waits until the requested sectors have been tried. If the copy

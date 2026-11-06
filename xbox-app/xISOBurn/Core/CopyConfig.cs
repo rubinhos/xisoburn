@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
@@ -68,6 +69,56 @@ namespace xISOBurn.Core
             var bytes = new byte[4];
             using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create()) rng.GetBytes(bytes);
             return (BitConverter.ToUInt32(bytes, 0) % 10000).ToString("0000");
+        }
+
+        /// <summary>
+        /// Applies the settings form, from the console's Settings dialog or from the web page, on top of
+        /// 'current'. Keys are the config.json names; a boolean is on only when its value is "true" (a
+        /// web checkbox that is not ticked is not sent at all). Returns null, with a message, if a field
+        /// is invalid; 'current' is never modified.
+        /// </summary>
+        public static CopyConfig FromForm(CopyConfig current, IDictionary<string, string> f, out string error)
+        {
+            error = null;
+            var cfg = (CopyConfig)current.MemberwiseClone();
+            Func<string, string> get = k => { string v; return f.TryGetValue(k, out v) && v != null ? v.Trim() : ""; };
+            Func<string, bool> flag = k => get(k) == "true";
+
+            cfg.WebPinRequired = flag("WebPinRequired");
+            cfg.WriteImage = flag("WriteImage");
+            cfg.DecryptCss = flag("DecryptCss");
+            cfg.SkipOnErrors = flag("SkipOnErrors");
+            cfg.OutputName = get("OutputName");
+            string pin = get("WebPin");
+
+            int port, timeout, passes, spr, speed, driveRetries;
+            long start, limit;
+            bool pinDigits = pin.Length >= 4 && pin.Length <= 8;
+            foreach (char ch in pin) if (ch < '0' || ch > '9') pinDigits = false;
+            if (!int.TryParse(get("WebPort"), out port) || port < 1024 || port > 65535) error = "The web page port must be a number from 1024 to 65535.";
+            else if (!pinDigits) error = "The PIN must have 4 to 8 digits.";
+            else if (!int.TryParse(get("SectorsPerRead"), out spr) || spr < 1 || spr > MaxSectorsPerRead) error = "Sectors per read must be 1 to " + MaxSectorsPerRead + ".";
+            else if (!int.TryParse(get("TimeoutSeconds"), out timeout) || timeout < 5 || timeout > 120) error = "Timeout must be 5 to 120 seconds.";
+            else if (!int.TryParse(get("RetryPasses"), out passes) || passes < 0 || passes > 100) error = "Retry passes must be 0 to 100.";
+            else if (!int.TryParse(get("RetryReadSpeedKBps"), out speed) || speed < 0 || speed > 0xFFFF) error = "The retry speed must be 0 (do not change) to 65535 kB/s.";
+            else if (!int.TryParse(get("DriveReadRetryCount"), out driveRetries) || driveRetries < -1 || driveRetries > 255) error = "The drive's retries must be -1 (do not change) to 255.";
+            else if (!long.TryParse(get("StartSector"), out start) || start < 0) error = "First sector must be 0 or more.";
+            else if (!long.TryParse(get("SectorLimit"), out limit) || limit < 0) error = "Sectors must be 0 (whole disc) or more.";
+            else if (cfg.OutputName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) error = "The file name contains characters that are not allowed.";
+            else
+            {
+                cfg.WebPort = port;
+                cfg.WebPin = pin;
+                cfg.SectorsPerRead = spr;
+                cfg.TimeoutSeconds = timeout;
+                cfg.RetryPasses = passes;
+                cfg.RetryReadSpeedKBps = speed;
+                cfg.DriveReadRetryCount = driveRetries;
+                cfg.StartSector = start;
+                cfg.SectorLimit = limit;
+                return cfg;
+            }
+            return null;
         }
 
         public static CopyConfig Load(string folder, out string message)

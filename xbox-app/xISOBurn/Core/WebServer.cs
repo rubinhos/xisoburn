@@ -21,6 +21,8 @@ namespace xISOBurn.Core
     ///   GET  /files/NAME.ext   download (.iso .map .sha256 .log); Range requests supported, so the
     ///                          browser can resume a download that was interrupted
     ///   POST /delete           name=NAME, deletes NAME.iso/.map/.sha256 from the Xbox
+    ///   POST /action           do=detect|copy|retry|scan|cancel: the app's buttons (remote control)
+    ///   GET  /settings         the settings form; POST /settings saves it (same rules as on the console)
     ///
     /// Download while copying: if NAME.iso is being written by a running rescue, the server waits
     /// before sending sectors that have not been read yet. If the copy stops, the download is
@@ -30,6 +32,16 @@ namespace xISOBurn.Core
     /// Plain HTTP on the local network; a PIN shown on the Xbox screen keeps others on the network
     /// from downloading or deleting copies. One request per connection (Connection: close).
     /// </summary>
+    /// <summary>Result of a remote action: Ok, or why it was refused. For the settings, also the confirmation.</summary>
+    internal sealed class RemoteReply
+    {
+        public bool Ok;
+        public string Message;
+
+        public static RemoteReply Done(string message) { return new RemoteReply { Ok = true, Message = message }; }
+        public static RemoteReply Refused(string message) { return new RemoteReply { Ok = false, Message = message }; }
+    }
+
     internal sealed class WebServer : IDisposable
     {
         private const int SectorSize = Scsi.OpticalDrive.SectorSize;
@@ -43,6 +55,8 @@ namespace xISOBurn.Core
         private readonly string _folder;
         private readonly Func<string> _statusHtml;    // fragment built on the UI thread
         private readonly Func<CopyConfig> _settings;  // current PIN settings
+        // Remote control: runs a button of the app (or saves the settings) on the UI thread.
+        private readonly Func<string, IDictionary<string, string>, string, Task<RemoteReply>> _remote;
         private StreamSocketListener _listener;
         private readonly HashSet<string> _visitors = new HashSet<string>();
 
@@ -53,12 +67,14 @@ namespace xISOBurn.Core
         /// console does not dim, idle-off or suspend the app in the middle of a download.</summary>
         public int ActiveDownloads { get { return System.Threading.Volatile.Read(ref _activeDownloads); } }
 
-        public WebServer(Logger log, string folder, Func<string> statusHtml, Func<CopyConfig> settings)
+        public WebServer(Logger log, string folder, Func<string> statusHtml, Func<CopyConfig> settings,
+                         Func<string, IDictionary<string, string>, string, Task<RemoteReply>> remote)
         {
             _log = log;
             _folder = folder;
             _statusHtml = statusHtml;
             _settings = settings;
+            _remote = remote;
         }
 
         /// <summary>Starts listening; returns false (and logs why) if the port cannot be used.</summary>
@@ -229,6 +245,35 @@ namespace xISOBurn.Core
                 if (message == null) await RedirectAsync(output, "/", "");
                 else await HtmlAsync(output, 200, Shell("<p>" + Enc(message) + "</p><p><a href=\"/\">Back</a></p>", false), false);
             }
+            else if (req.Method == "POST" && req.Path == "/action")
+            {
+                // The buttons of the app: detect, copy, retry, scan, cancel.
+                string action;
+                req.Form.TryGetValue("do", out action);
+                var reply = await _remote(action ?? "", req.Form, req.Remote);
+                if (reply.Ok) await RedirectAsync(output, "/", "");
+                else await HtmlAsync(output, 200, Shell("<p class=\"err\">" + Enc(reply.Message) + "</p><p><a href=\"/\">Back</a></p>", false), false);
+            }
+            else if ((req.Method == "GET" || head) && req.Path == "/settings")
+            {
+                string msg;
+                await HtmlAsync(output, 200, SettingsPage(CopyConfig.Load(_folder, out msg), null), head);
+            }
+            else if (req.Method == "POST" && req.Path == "/settings")
+            {
+                var reply = await _remote("settings", req.Form, req.Remote);
+                if (reply.Ok)
+                {
+                    await HtmlAsync(output, 200, Shell("<p class=\"ok\">" + Enc(reply.Message) + "</p><p><a href=\"/\">Back</a></p>", false), false);
+                }
+                else
+                {
+                    // Show the form again with what was typed, so the field can be fixed.
+                    string msg;
+                    var typed = CopyConfig.Load(_folder, out msg);
+                    await HtmlAsync(output, 200, SettingsPage(typed, reply.Message, req.Form), false);
+                }
+            }
             else
             {
                 await RespondAsync(output, 404, "Not Found", "text/plain", Encoding.UTF8.GetBytes("not found"), head);
@@ -299,7 +344,13 @@ namespace xISOBurn.Core
                 long count = length == 0 ? 0 : end - start + 1;
                 string type = iso ? "application/octet-stream" : "text/plain; charset=utf-8";
                 string disposition = iso ? "attachment" : "inline";
+                // ?dl=TOKEN (added by the page's script when the ISO link is clicked): echo it in a cookie, so
+                // the page knows the download has started and can hide its loading and resume refreshing.
+                string token;
+                string dlCookie = req.Query.TryGetValue("dl", out token) && IsToken(token)
+                    ? "Set-Cookie: xbdl=" + token + "; Path=/; SameSite=Strict\r\n" : "";
                 string headers = "HTTP/1.1 " + (partial ? "206 Partial Content" : "200 OK") + "\r\n" +
+                                 dlCookie +
                                  "Content-Type: " + type + "\r\n" +
                                  "Content-Length: " + count + "\r\n" +
                                  (partial ? "Content-Range: bytes " + start + "-" + end + "/" + length + "\r\n" : "") +
@@ -404,7 +455,7 @@ namespace xISOBurn.Core
             if (name.Length == 0 || name != Path.GetFileName(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
                 return "Invalid name.";
             if (LiveImages.Get(name + ".iso") != null)
-                return name + " is being copied right now. Pause the copy on the Xbox first.";
+                return name + " is being copied right now. Pause the copy first (Pause / cancel).";
             int deleted = 0;
             foreach (var ext in new[] { ".iso", ".map", ".sha256", ".map.old", ".map.tmp" })
             {
@@ -488,14 +539,15 @@ namespace xISOBurn.Core
 
             string enc = Uri.EscapeDataString(name);
             var links = new StringBuilder();
-            links.Append("<a href=\"/files/").Append(Uri.EscapeDataString(file)).Append("\">ISO</a>");
+            // data-dl: the page's script follows this download (see BusyOverlay).
+            links.Append("<a data-dl=\"1\" href=\"/files/").Append(Uri.EscapeDataString(file)).Append("\">ISO</a>");
             if (File.Exists(Path.Combine(_folder, name + ".map")))
                 links.Append(" &middot; <a href=\"/files/").Append(enc).Append(".map\">map</a>");
             if (sha != null)
                 links.Append(" &middot; <a href=\"/files/").Append(enc).Append(".sha256\">sha256</a>");
 
             string delete = live != null ? "" :
-                "<form method=\"post\" action=\"/delete\" onsubmit=\"return confirm('Delete " + Enc(name).Replace("'", "\\'") +
+                "<form method=\"post\" action=\"/delete\" data-wait=\"Deleting...\" onsubmit=\"return confirm('Delete " + Enc(name).Replace("'", "\\'") +
                 " from the Xbox? Download it first.')\"><input type=\"hidden\" name=\"name\" value=\"" + Enc(name) +
                 "\"><button>Delete</button></form>";
 
@@ -540,8 +592,89 @@ namespace xISOBurn.Core
         {
             return Shell("<h2>PIN</h2><p>Type the PIN shown at the top of the xISOBurn screen on the Xbox.</p>" +
                          (error != null ? "<p class=\"err\">" + Enc(error) + "</p>" : "") +
-                         "<form method=\"post\" action=\"/login\"><input name=\"pin\" type=\"password\" inputmode=\"numeric\" " +
+                         "<form method=\"post\" action=\"/login\" data-wait=\"Checking the PIN...\"><input name=\"pin\" type=\"password\" inputmode=\"numeric\" " +
                          "autocomplete=\"off\" autofocus size=\"8\"> <button>Enter</button></form>", false);
+        }
+
+        /// <summary>
+        /// The same settings as the console's Settings dialog. 'typed' (after a rejected save) refills
+        /// the fields with what was sent instead of the saved values.
+        /// </summary>
+        private static string SettingsPage(CopyConfig cfg, string error, IDictionary<string, string> typed = null)
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            Func<string, string, string> val = (key, saved) =>
+            {
+                string v;
+                return typed != null ? (typed.TryGetValue(key, out v) ? v : "") : saved;
+            };
+            Func<string, bool, string> check = (key, saved) =>
+            {
+                bool on = typed != null ? val(key, "") == "true" : saved;
+                return "<label><input type=\"checkbox\" name=\"" + key + "\" value=\"true\"" + (on ? " checked" : "") + "> ";
+            };
+            Func<string, string, string[][], string> select = (key, current, options) =>
+            {
+                var s = new StringBuilder("<select name=\"" + key + "\">");
+                bool found = false;
+                foreach (var o in options)
+                {
+                    bool sel = o[0] == current;
+                    found |= sel;
+                    s.Append("<option value=\"").Append(o[0]).Append('"').Append(sel ? " selected" : "").Append('>').Append(Enc(o[1])).Append("</option>");
+                }
+                if (!found) s.Append("<option value=\"").Append(Enc(current)).Append("\" selected>").Append(Enc(current)).Append(" (from config.json)</option>");
+                return s.Append("</select>").ToString();
+            };
+            Func<string, string, string, string> text = (key, saved, attrs) =>
+                "<input name=\"" + key + "\" value=\"" + Enc(val(key, saved)) + "\" " + attrs + ">";
+
+            var b = new StringBuilder();
+            b.Append("<h2>Settings</h2>");
+            if (error != null) b.Append("<p class=\"err\">").Append(Enc(error)).Append("</p>");
+            b.Append("<form method=\"post\" action=\"/settings\" class=\"settings\" data-wait=\"Saving the settings...\">");
+
+            b.Append("<h3>Web page</h3>");
+            b.Append("<p>Port (1024-65535; changing it needs an app restart)<br>")
+             .Append(text("WebPort", cfg.WebPort.ToString(inv), "type=\"number\" min=\"1024\" max=\"65535\"")).Append("</p>");
+            b.Append("<p>").Append(check("WebPinRequired", cfg.WebPinRequired)).Append("Ask for the PIN on the web page</label></p>");
+            b.Append("<p>PIN (4 to 8 digits)<br>").Append(text("WebPin", cfg.WebPin, "inputmode=\"numeric\" size=\"8\"")).Append("</p>");
+
+            b.Append("<h3>Copy</h3>");
+            b.Append("<p>File name (empty = the disc's volume label)<br>").Append(text("OutputName", cfg.OutputName, "size=\"30\"")).Append("</p>");
+            b.Append("<p>").Append(check("WriteImage", cfg.WriteImage)).Append("Write the image (off = only test the drive and build the map)</label></p>");
+            b.Append("<p>").Append(check("DecryptCss", cfg.DecryptCss)).Append("Decrypt CSS-protected DVD-Video while copying (off = copy it scrambled)</label></p>");
+
+            b.Append("<h3>Reading</h3>");
+            b.Append("<p>Sectors per read<br>").Append(select("SectorsPerRead", val("SectorsPerRead", cfg.SectorsPerRead.ToString(inv)), new[]
+            {
+                new[] { "16", "16 (32 KiB)" }, new[] { "32", "32 (64 KiB, default)" }, new[] { "48", "48 (96 KiB)" }, new[] { "64", "64 (128 KiB)" },
+            })).Append("</p>");
+            b.Append("<p>Timeout per command (seconds, 5-120)<br>")
+             .Append(text("TimeoutSeconds", cfg.TimeoutSeconds.ToString(inv), "type=\"number\" min=\"5\" max=\"120\"")).Append("</p>");
+            b.Append("<p>").Append(check("SkipOnErrors", cfg.SkipOnErrors)).Append("Skip ahead over areas with many errors (filled in later)</label></p>");
+            b.Append("<p>Retry passes over bad sectors (0-100)<br>")
+             .Append(text("RetryPasses", cfg.RetryPasses.ToString(inv), "type=\"number\" min=\"0\" max=\"100\"")).Append("</p>");
+            b.Append("<p>Drive speed for retries<br>").Append(select("RetryReadSpeedKBps", val("RetryReadSpeedKBps", cfg.RetryReadSpeedKBps.ToString(inv)), new[]
+            {
+                new[] { "0", "Do not change" }, new[] { "1385", "DVD 1x (1385 kB/s, default)" },
+                new[] { "2770", "DVD 2x (2770 kB/s)" }, new[] { "5540", "DVD 4x (5540 kB/s)" },
+            })).Append("</p>");
+            b.Append("<p>Drive's own retries per failing read (experimental)<br>").Append(select("DriveReadRetryCount", val("DriveReadRetryCount", cfg.DriveReadRetryCount.ToString(inv)), new[]
+            {
+                new[] { "-1", "Do not change (default)" }, new[] { "0", "0 (fastest failures)" },
+                new[] { "1", "1" }, new[] { "4", "4" }, new[] { "8", "8" },
+            })).Append("</p>");
+
+            b.Append("<h3>Range (for tests)</h3>");
+            b.Append("<p>First sector<br>").Append(text("StartSector", cfg.StartSector.ToString(inv), "type=\"number\" min=\"0\"")).Append("</p>");
+            b.Append("<p>Sectors (0 = to the end)<br>").Append(text("SectorLimit", cfg.SectorLimit.ToString(inv), "type=\"number\" min=\"0\"")).Append("</p>");
+
+            b.Append("<p><button>Save</button> &nbsp; <a href=\"/\">Cancel</a></p>");
+            b.Append("<p class=\"dim\">Changes apply from the next run. Only a new web page port needs an app restart. " +
+                     "If you change the PIN, the page asks for the new one.</p>");
+            b.Append("</form>");
+            return Shell(b.ToString(), false);
         }
 
         // The page reloads every 5 s. Across reloads it keeps which <details> are open and the scroll
@@ -555,10 +688,47 @@ namespace xISOBurn.Core
             "d.addEventListener('toggle',function(){S.setItem('open_'+d.id,d.open?'1':'0')});});" +
             "var y=S.getItem('scrollY');if(y!==null)window.scrollTo(0,parseInt(y,10));" +
             "function tick(){" +
+            "if(window.xbBusy){setTimeout(tick,5000);return;}" + // a form or a download is on its way
             "var sel=window.getSelection?String(window.getSelection()):'';" +
             "if(sel.length>0){setTimeout(tick,5000);return;}" +
             "S.setItem('scrollY',String(window.scrollY));location.reload();}" +
             "setTimeout(tick,5000);})();</script>";
+
+        // Full-screen "loading" while a form is sent (the app's buttons, Settings, Delete, PIN): the Xbox
+        // can take a moment to answer, and without it the click looked ignored. The listener is on the
+        // document, so it runs after a form's own onsubmit: a cancelled Delete confirmation
+        // (defaultPrevented) shows nothing. The overlay also blocks a second click. The submit button is
+        // not disabled, because a disabled button's name/value would not be sent. 'pageshow' hides the
+        // overlay when the browser's Back button brings a cached page back.
+        private const string BusyOverlay =
+            "<div id=\"busy\" role=\"status\" aria-live=\"polite\"><div class=\"spin\"></div><div id=\"busytext\"></div></div>" +
+            "<script>(function(){" +
+            "var o=document.getElementById('busy'),t=document.getElementById('busytext'),n=0;" +
+            "function hide(){n++;o.className='';o.onclick=null;window.xbBusy=false;}" +
+            // Shows the overlay; with no answer after 'wait' ms (app closed, network down) it says so and
+            // closes on a click. 'n' tells a stale timer from the current one.
+            "function show(text,wait){var my=++n;t.textContent=text;o.className='on';window.xbBusy=true;" +
+            "setTimeout(function(){if(my!==n)return;" +
+            "t.textContent='No answer from the Xbox. Is xISOBurn still open on the screen? Click to close.';" +
+            "o.onclick=hide;},wait);return my;}" +
+            "document.addEventListener('submit',function(e){" +
+            "if(e.defaultPrevented)return;" +
+            "var b=e.submitter||e.target.querySelector('button');" +
+            "show((b&&b.getAttribute('data-wait'))||e.target.getAttribute('data-wait')||'Sending to the Xbox...',30000);});" +
+            // ISO links: a download does not replace the page, so the 5 s reload could cancel the request
+            // before the Xbox answers (the click then seemed ignored). Pause the reload and follow the
+            // download: the server echoes ?dl=TOKEN in the xbdl cookie once the download has started.
+            "document.addEventListener('click',function(e){" +
+            "var a=e.target.closest?e.target.closest('a[data-dl]'):null;" +
+            "if(!a||e.button!==0||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;" +
+            "e.preventDefault();" +
+            "var k=Date.now().toString(36)+Math.random().toString(36).slice(2,8);" +
+            "var my=show('Starting the download...',60000),iv=setInterval(function(){" +
+            "if(my!==n){clearInterval(iv);return;}" +
+            "if(document.cookie.indexOf('xbdl='+k)>=0){clearInterval(iv);hide();}},250);" +
+            "location.href=a.href+(a.href.indexOf('?')<0?'?':'&')+'dl='+k;});" +
+            "window.addEventListener('pageshow',hide);" +
+            "})();</script>";
 
         private static string Shell(string body, bool autoRefresh)
         {
@@ -573,10 +743,27 @@ namespace xISOBurn.Core
                    "th{color:#9fe07a;font-weight:600}.dim{color:#9a9a9a;font-size:13px}.ok{color:#4cc417}.busy{color:#f0c040}.err{color:#ff6b6b}" +
                    "button{background:#2e7d32;color:#fff;border:0;padding:6px 12px;border-radius:3px;cursor:pointer}" +
                    "input{padding:6px;font-size:16px}details{margin-top:18px}" +
+                   "button[disabled]{background:#333;color:#777;cursor:default}.controls button{margin:0 6px 6px 0;font-size:15px}" +
+                   "h3{font-size:15px;color:#9fe07a;margin:16px 0 4px}select{padding:6px;font-size:15px}.settings p{margin:6px 0}" +
+                   "#busy{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.65);display:none;z-index:10;" +
+                   "flex-direction:column;align-items:center;justify-content:center;font-size:17px;color:#e8e8e8;cursor:wait}" +
+                   "#busy.on{display:flex}.spin{width:48px;height:48px;margin-bottom:16px;border:5px solid #2e7d32;" +
+                   "border-top-color:#4cc417;border-radius:50%;animation:spin .8s linear infinite}" +
+                   "@keyframes spin{to{transform:rotate(360deg)}}" +
                    "</style></head><body><h1>xISOBurn</h1><div class=\"dim\">Served by the Xbox" +
                    (autoRefresh ? " &middot; updates every 5 s" : "") + "</div>" + body +
+                   BusyOverlay +
                    (autoRefresh ? RefreshScript : "") +
                    "</body></html>";
+        }
+
+        /// <summary>The download token the page sends (?dl=): letters and digits only, so it is safe in a header.</summary>
+        private static bool IsToken(string s)
+        {
+            if (string.IsNullOrEmpty(s) || s.Length > 32) return false;
+            foreach (char c in s)
+                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))) return false;
+            return true;
         }
 
         private static string Enc(string s)

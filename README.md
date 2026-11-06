@@ -18,12 +18,13 @@ You only install the Xbox app; the PC needs nothing.
   download while the copy is running, and resume it if the network drops. A PIN keeps others on the
   network out. The network is needed because files on USB storage are limited to about 2 GB in
   Developer Mode.
-- **Gamepad only:** every setting can be changed on screen.
+- **Gamepad or browser:** every action and setting is on the Xbox screen and also on the web page,
+  so the copy can be started, paused and set up from the PC.
 
 ## Quick start
 
-1. **Build:** push to `master` (or run the **build** workflow by hand). GitHub Actions produces the
-   `xISOBurn-xbox-1.0.N.0` artifact.
+1. **Get it:** download the latest version from the repository's **Releases** page (each build of
+   `master` is published there), or build it on GitHub Actions.
 2. **Install:** put the console in Developer Mode, turn on the Device Portal, and install the `.msix`
    with its dependencies from the PC browser. Step by step: [docs/install.md](docs/install.md).
 3. **Copy:** open xISOBurn and insert the disc. Choose **Detect disc**, then **Copy / resume**. **B**
@@ -32,6 +33,9 @@ You only install the Xbox app; the PC needs nothing.
    (`http://192.168.x.x:8770/`), type the PIN, and click **ISO**. Compare the SHA-256 on the page with
    `Get-FileHash .\NAME.iso -Algorithm SHA256`.
 5. **Clean up:** **Delete** on the page frees the space on the Xbox.
+
+Apart from inserting the disc, step 3 can also be done from the web page, which has the same buttons
+as the app. Leave the app open on the Xbox.
 
 Other buttons: **Retry failed** tries the bad sectors once more, **Scan disc** runs a quick read-only
 health check, and **Settings** opens the settings.
