@@ -338,6 +338,15 @@ namespace xISOBurn
                     return;
                 }
 
+                // CSS-protected DVD-Video: the drive refuses the scrambled video sectors, so the copy
+                // would run for hours and end with an image that does not play. Ask first.
+                if (_probe.Cpst == 1 && !extraRetryPass && !await ConfirmCssCopyAsync())
+                {
+                    _log.Info("Copy not started: the disc is CSS-protected and the user chose not to copy it.");
+                    StatusText.Text = "Copy not started: this disc is CSS-protected.";
+                    return;
+                }
+
                 // Keep the screen on: on Xbox, an app that leaves the screen or lets it dim gets suspended.
                 display.RequestActive();
                 displayActive = true;
@@ -346,6 +355,7 @@ namespace xISOBurn
                 StatusText.Text = "Copying to the Xbox... do not leave the app. B pauses (progress is kept). " +
                                   "The download can already start on the web page.";
                 Bar.Value = 0;
+                _refusalShown = false;
 
                 var progress = new Progress<RescueProgress>(UpdateProgress);
                 var job = new RescueJob(_drive, _probe, cfg, _log, _folder, extraRetryPass);
@@ -371,6 +381,8 @@ namespace xISOBurn
                     StatusText.Text = "Stopped: " + result.Error + " (" + counts + ")";
                 else
                     StatusText.Text = "Range done: " + counts + ".";
+                if (result.RefusedThisRun >= RescueJob.RefusalNoticeAfter)
+                    StatusText.Text += " " + RefusalMessage(result.RefusedThisRun);
             }
             catch (Exception ex)
             {
@@ -397,7 +409,38 @@ namespace xISOBurn
                 "Speed: " + (p.BytesPerSecond / 1048576.0).ToString("0.00") + " MiB/s | Elapsed: " + RescueJob.FormatTime(p.Elapsed) +
                 " | Phase remaining: " + (p.Remaining.HasValue ? RescueJob.FormatTime(p.Remaining.Value) : "-") + "\n" +
                 "Disc: " + okPct.ToString("0.000") + "% read | bad " + p.Bad.ToString("N0") + " | pending " + p.Pending.ToString("N0") +
-                " | not tried " + p.Untried.ToString("N0");
+                " | not tried " + p.Untried.ToString("N0") +
+                (p.Refused > 0 ? " | refused " + p.Refused.ToString("N0") : "");
+            if (p.Refused >= RescueJob.RefusalNoticeAfter && !_refusalShown)
+            {
+                _refusalShown = true;
+                StatusText.Text = RefusalMessage(p.Refused) + " B pauses the copy.";
+            }
+        }
+
+        private bool _refusalShown;
+
+        private string RefusalMessage(long refused)
+        {
+            return "The drive refused " + refused.ToString("N0") + " read(s) at once: that is copy protection " +
+                   (_probe != null && _probe.Cpst == 1 ? "(this disc has CSS)" : "or a region mismatch") +
+                   ", not disc damage. Retrying will not recover those sectors.";
+        }
+
+        private async Task<bool> ConfirmCssCopyAsync()
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "This disc is CSS-protected",
+                Content = "Most commercial DVD-Video discs use CSS. The drive refuses to read the protected video " +
+                          "files, so those sectors will fail and stay as zeros, and the image will not play.\n\n" +
+                          "xISOBurn does not decrypt CSS. It is meant for discs without CSS: home-made DVDs, " +
+                          "data and software discs, unprotected video.\n\nCopy anyway?",
+                PrimaryButtonText = "Copy anyway",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            return await dialog.ShowAsync() == ContentDialogResult.Primary;
         }
 
         private async void ScanButton_Click(object sender, RoutedEventArgs e)

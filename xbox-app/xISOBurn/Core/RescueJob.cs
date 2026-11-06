@@ -55,6 +55,7 @@ namespace xISOBurn.Core
         public TimeSpan Elapsed;
         public TimeSpan? Remaining;          // for the current phase
         public long Total, Ok, Untried, Pending, Bad;
+        public long Refused;                 // reads the drive refused at once (see RescueJob.IsRefusal)
     }
 
     internal sealed class RescueResult
@@ -65,6 +66,7 @@ namespace xISOBurn.Core
         public long Ok, Untried, Pending, Bad;
         /// <summary>Sectors tried / recovered by the scrape and retry passes of this run.</summary>
         public long RetriedThisRun, RecoveredThisRun;
+        public long RefusedThisRun;   // failed reads that were quick refusals, not media errors
         public string Sha256;
         public string ImagePath, MapPath;
         public TimeSpan Elapsed;
@@ -124,6 +126,14 @@ namespace xISOBurn.Core
         private readonly bool _extraRetryPass;
         private long _retried, _recovered;
 
+        // Quick refusals: the drive answers a READ with an error at once, without the seconds of retries
+        // a real media error costs. Seen on CSS-protected DVD-Video (the scrambled video sectors) and on
+        // a region mismatch. The driver drops the sense data, so the timing is the only clue.
+        public const double RefusalMaxMs = 200;
+        public const long RefusalNoticeAfter = 8;
+        private long _refused;
+        private bool _refusalNoticeLogged;
+
         /// <summary>File names used for a disc (also used by the UI to look for a previous rescue).</summary>
         public static string BaseNameFor(CopyConfig cfg, DiscProbe probe)
         {
@@ -170,6 +180,9 @@ namespace xISOBurn.Core
             _log.Section("Rescue");
             _log.Info("Settings: " + _cfg.Describe());
             LoadOrCreateMap(total);
+            if (_probe.Cpst == 1)
+                _log.Info("This disc is CSS-protected: the drive is expected to refuse the scrambled video sectors, " +
+                          "and the image will not play. xISOBurn does not decrypt CSS.");
             _log.Info("Work range: LBA " + first + " to " + (end - 1) + (first > 0 || end < total ? " (partial range)" : " (whole disc)"));
             _sw.Start();
 
@@ -274,8 +287,12 @@ namespace xISOBurn.Core
             result.Bad = _map.Count(SectorState.Bad);
             result.RetriedThisRun = _retried;
             result.RecoveredThisRun = _recovered;
+            result.RefusedThisRun = _refused;
 
             _log.Section("Rescue result");
+            if (_refused > 0)
+                _log.Info("Quick refusals this run: " + _refused + " failed read(s) came back in under " + RefusalMaxMs +
+                          " ms. That is the drive refusing the area (copy protection or region), not disc damage.");
             if (_retried > 0)
                 _log.Info("Retries this run: " + _recovered + " of " + _retried + " sector(s) recovered.");
             _log.Info(result.Finished ? "Nothing left to try." : result.Cancelled ? "Cancelled; run again to resume." :
@@ -514,7 +531,33 @@ namespace xISOBurn.Core
                                            (uint)_cfg.TimeoutSeconds);
             if (r.Sense != null && r.Sense.IsNoMedium)
                 throw new MediumRemovedException("Disc removed or no media in the drive: " + r.Sense);
+            if (IsRefusal(r)) NoteRefusal(lba);
             return r;
+        }
+
+        /// <summary>
+        /// A failed read that is a refusal, not a media error: copy-protection sense (05/6F/xx), or a
+        /// CHECK CONDITION without sense that came back faster than any real read retry would.
+        /// </summary>
+        public static bool IsRefusal(ScsiResult r)
+        {
+            if (r.Success) return false;
+            if (r.Sense != null) return r.Sense.IsCopyProtection;
+            return r.IoctlOk && r.ScsiStatus == 2 && r.ElapsedMs < RefusalMaxMs;
+        }
+
+        private void NoteRefusal(long lba)
+        {
+            _refused++;
+            if (!_refusalNoticeLogged && _refused >= RefusalNoticeAfter)
+            {
+                _refusalNoticeLogged = true;
+                _log.Info("NOTE: the drive is refusing reads at once (around LBA " + lba + "), with no error detail. " +
+                          "This is not disc damage: it is what copy protection (CSS) or a region mismatch looks like. " +
+                          (_probe.Cpst == 1 ? "This disc is CSS-protected, so the video files cannot be read. "
+                                            : "") +
+                          "Retrying will not help these sectors.");
+            }
         }
 
         private static bool Ok(ScsiResult r, int count)
@@ -671,7 +714,7 @@ namespace xISOBurn.Core
                 Phase = _phase, PhaseDone = _phaseDone, PhaseTotal = _phaseTotal, CurrentLba = lba,
                 BytesPerSecond = _speed.BytesPerSecond, Elapsed = elapsed,
                 Total = _map.TotalSectors, Ok = _map.Count(SectorState.Ok), Untried = _map.Count(SectorState.Untried),
-                Pending = _map.Count(SectorState.Pending), Bad = _map.Count(SectorState.Bad),
+                Pending = _map.Count(SectorState.Pending), Bad = _map.Count(SectorState.Bad), Refused = _refused,
             };
             if (_speed.BytesPerSecond > 0)
                 p.Remaining = TimeSpan.FromSeconds((_phaseTotal - _phaseDone) * (double)SectorSize / _speed.BytesPerSecond);

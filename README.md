@@ -40,10 +40,18 @@ over the local network, because files on USB storage are limited to about 2 GB i
 ## Output format
 
 The image is a raw, sector-by-sector copy (2048 bytes per sector), identical to a plain ISO. The app
-does **not** decrypt CSS: it only copies what the drive returns. If a drive returns scrambled data
-from an encrypted DVD, the image is only useful to someone who can decrypt it later on the PC (for
-example with MakeMKV). Sectors that can't be read are filled with zeros and listed in the `.map` file
-next to the image.
+does **not** decrypt CSS and does not authenticate with the drive: it only copies what the drive
+returns. Sectors that can't be read are filled with zeros and listed in the `.map` file next to the
+image.
+
+**CSS-protected discs** (most commercial DVD-Video): the console's drive refuses to return the
+protected video sectors. Those reads fail at once (tens of milliseconds, with no error detail),
+unlike real damage, which costs seconds per read. xISOBurn is meant for discs without CSS:
+home-made DVDs, data and software discs, and unprotected video.
+- **Before copying:** if Detect disc reports `Protection: CSS/CPPM`, **Copy / resume** asks for
+  confirmation first.
+- **During the copy:** quick refusals are counted (`refused N` in the progress). After a few of them,
+  the screen and the log explain that this is protection or a region mismatch, not disc damage.
 
 ## How the drive is accessed
 
