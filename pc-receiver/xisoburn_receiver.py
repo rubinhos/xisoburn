@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """xISOBurn receiver: receives a disc image from the xISOBurn Xbox app over the local network.
 
-Usage (see docs/milestone-3.md):
+Usage (see pc-receiver/README.md):
 
-    xisoburn-receiver --out D:\\DVDs\\backup                 (one ISO per disc, named by the app)
-    xisoburn-receiver --out D:\\DVDs\\backup\\ACQUARIA.iso    (one fixed file)
+    xisoburn-receiver                                        (opens the window: receiver_gui.py)
+    xisoburn-receiver --out D:\\DVDs\\backup                 (window pre-filled, starts at once)
+    xisoburn-receiver --nogui --out D:\\DVDs\\backup          (console only)
+    xisoburn-receiver --nogui --out D:\\DVDs\\backup\\ACQUARIA.iso   (one fixed file)
 
-Options: --port 8770, --token SECRET (default: generated once and kept next to the output),
---bind 0.0.0.0.
+Options: --port 8770, --token SECRET (console: generated once and kept next to the output;
+window: remembered in its settings), --bind 0.0.0.0.
 
 Protocol (HTTP/1.1, JSON responses, header X-Token on every request, local network clients only):
 
@@ -88,6 +90,8 @@ class Image:
         self.ranges = []
         self.last_save = 0.0
         self.last_percent = -1
+        self.last_write = 0.0      # time of the last chunk (the window shows "receiving" / "paused")
+        self.finished_sha = None   # SHA-256 once the app reported the disc as complete
 
         exists = os.path.exists(path)
         if exists and not os.path.exists(self.state_path):
@@ -133,6 +137,7 @@ class Image:
             self.file.seek(lba * SECTOR)
             self.file.write(data)
             self.add_range(lba, lba + len(data) // SECTOR)
+            self.last_write = time.time()
             if time.time() - self.last_save >= STATE_SAVE_INTERVAL:
                 self.save_state()
             percent = self.received() * 100 // self.total
@@ -173,13 +178,31 @@ class Image:
 class Receiver:
     """State shared by all requests: output location, token and the open images."""
 
-    def __init__(self, out, token, console=True):
+    def __init__(self, out, token, console=True, on_event=None):
         self.out = os.path.abspath(out)
         self.single_file = self.out.lower().endswith(".iso")
         self.token = token
         self.console = console
+        self.on_event = on_event  # called as on_event(disc_name, message) from server threads (the window)
         self.images = {}
         self.lock = threading.Lock()
+
+    def notify(self, name, message):
+        # A windowed .exe has no console (sys.stdout is None): only print when there is one.
+        if self.console and sys.stdout is not None:
+            print("[%s] %s" % (name, message) if name else message, flush=True)
+        if self.on_event is not None:
+            self.on_event(name, message)
+
+    def snapshot(self):
+        """(name, path, received, total, last_write, finished_sha) for every open image; used by the window."""
+        with self.lock:
+            images = list(self.images.items())
+        rows = []
+        for name, img in images:
+            with img.lock:
+                rows.append((name, img.path, img.received(), img.total, img.last_write, img.finished_sha))
+        return rows
 
     def base_path(self, name):
         if self.single_file:
@@ -191,8 +214,7 @@ class Receiver:
 
         def log(message):
             line = "%s  %s" % (now(), message)
-            if self.console:
-                print("[%s] %s" % (name, message), flush=True)
+            self.notify(name, message)
             try:
                 os.makedirs(os.path.dirname(log_path), exist_ok=True)
                 with open(log_path, "a", encoding="utf-8") as f:
@@ -302,6 +324,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 raise HttpError(404, "no route %s %s" % (method, path))
         except HttpError as e:
+            if e.status in (401, 403):
+                # Shown in the window: the usual cause is a wrong token typed on the Xbox.
+                self.receiver.notify("", "refused %s: %s" % (self.client_address[0], e.message))
             self.send_json(e.status, {"error": e.message}, close=e.status in (401, 403, 413))
         except Exception as e:  # keep the server alive whatever happens
             self.send_json(500, {"error": "%s: %s" % (type(e).__name__, e)})
@@ -367,6 +392,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with open(base + ".sha256", "w", encoding="utf-8", newline="\n") as f:
                 f.write("%s *%s\n" % (digest, os.path.basename(img.path)))
             result["sha256"] = digest
+            img.finished_sha = digest
             img.log("finished: SHA-256 %s, %d sector(s) never received (zeros)" % (digest, missing))
         else:
             img.save_state(force=True)
@@ -388,9 +414,9 @@ class Server(http.server.ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
-def make_server(out, port, token, bind="0.0.0.0", console=True):
+def make_server(out, port, token, bind="0.0.0.0", console=True, on_event=None):
     server = Server((bind, port), Handler)
-    server.receiver = Receiver(out, token, console)
+    server.receiver = Receiver(out, token, console, on_event)
     return server
 
 
@@ -426,16 +452,35 @@ def load_or_create_token(out):
     return token, path
 
 
+def firewall_command(port):
+    # Single quotes only, so the command can be passed as-is to powershell.exe -Command "..."
+    return ("New-NetFirewallRule -DisplayName 'xISOBurn receiver (TCP %d)' -Direction Inbound -Protocol TCP "
+            "-LocalPort %d -Action Allow -Profile Private" % (port, port))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="xisoburn-receiver",
-                                     description="Receives disc images from the xISOBurn Xbox app.")
-    parser.add_argument("--out", required=True,
-                        help="output folder (one ISO per disc) or an .iso file path")
-    parser.add_argument("--port", type=int, default=8770, help="TCP port (default 8770)")
-    parser.add_argument("--token", help="shared secret typed into the app (default: generated and kept "
-                                        "in xisoburn-receiver.token next to the output)")
+                                     description="Receives disc images from the xISOBurn Xbox app. "
+                                                 "Opens a window unless --nogui is given.")
+    parser.add_argument("--out", help="output folder (one ISO per disc) or an .iso file path; "
+                                      "with the window, it is pre-filled and the receiver starts at once")
+    parser.add_argument("--port", type=int, default=None, help="TCP port (default 8770)")
+    parser.add_argument("--token", help="shared secret typed into the app (default: generated and kept)")
     parser.add_argument("--bind", default="0.0.0.0", help="address to listen on (default: all)")
+    parser.add_argument("--nogui", action="store_true", help="run in the console, without a window")
     args = parser.parse_args(argv)
+
+    if not args.nogui:
+        try:
+            import receiver_gui
+        except ImportError:
+            receiver_gui = None  # Python without Tkinter: fall back to the console
+        if receiver_gui is not None:
+            return receiver_gui.run(out=args.out, port=args.port, token=args.token, bind=args.bind)
+    if not args.out:
+        parser.error("--out is required in console mode")
+    if args.port is None:
+        args.port = 8770
 
     token = args.token
     token_note = "from --token"
@@ -452,8 +497,7 @@ def main(argv=None):
     print()
     print("Type the address, port and token into xISOBurn on the Xbox.")
     print("Windows Firewall: allow the app on PRIVATE networks when Windows asks, or run once as administrator:")
-    print('  New-NetFirewallRule -DisplayName "xISOBurn receiver" -Direction Inbound -Protocol TCP '
-          '-LocalPort %d -Action Allow -Profile Private' % args.port)
+    print("  " + firewall_command(args.port))
     print("Only clients on the local network are accepted. Press Ctrl+C to stop.", flush=True)
     try:
         server.serve_forever()

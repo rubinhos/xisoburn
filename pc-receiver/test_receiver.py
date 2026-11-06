@@ -128,5 +128,41 @@ class ReceiverTest(unittest.TestCase):
         self.assertEqual(img.ranges, [[0, 40], [45, 60]])
 
 
+class GuiTest(unittest.TestCase):
+    """Smoke test of the window: start and stop the receiver from it. Skipped without a display."""
+
+    def test_start_and_stop(self):
+        try:
+            import tkinter as tk
+            import receiver_gui
+            root = tk.Tk()
+        except Exception as e:  # no Tk or no display (e.g. some CI machines)
+            self.skipTest("no Tk: %s" % e)
+        tmp = tempfile.mkdtemp(prefix="xisoburn-gui-")
+        old_settings = receiver_gui.SETTINGS_PATH
+        receiver_gui.SETTINGS_PATH = os.path.join(tmp, "settings.json")
+        errors = []
+        old_error = receiver_gui.messagebox.showerror
+        receiver_gui.messagebox.showerror = lambda *a, **k: errors.append(a)  # never block on a dialog
+        try:
+            import socket
+            with socket.socket() as s:
+                s.bind(("127.0.0.1", 0))
+                port = s.getsockname()[1]
+            app = receiver_gui.App(root, out=os.path.join(tmp, "out"), port=port, token=TOKEN, bind="127.0.0.1")
+            app.start()
+            self.assertEqual(errors, [])
+            self.assertIsNotNone(app.server)
+            app.events.put(("DISC", "hello"))
+            app.tick()
+            app.stop()
+            self.assertIsNone(app.server)
+            root.destroy()
+        finally:
+            receiver_gui.messagebox.showerror = old_error
+            receiver_gui.SETTINGS_PATH = old_settings
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

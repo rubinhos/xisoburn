@@ -6,9 +6,10 @@ avoids both the Xbox's internal storage and the ~2 GB file limit on USB storage 
 
 ## Quick start
 
-1. **PC:** download the `xisoburn-receiver-N` artifact (see [install.md](install.md)) and run
-   `.\xisoburn-receiver.exe --out D:\DVDs\backup`. Allow it on private networks when Windows asks.
-   Note the **address, port and token** it prints. Details: [pc-receiver/README.md](../pc-receiver/README.md).
+1. **PC:** download the `xisoburn-receiver-N` artifact (see [install.md](install.md)) and open
+   `xisoburn-receiver.exe`. Choose the output folder and press **Start**. Allow it on private
+   networks when Windows asks, or use **Allow in Windows Firewall**. The window shows the **address,
+   port and token** to type on the Xbox. Details: [pc-receiver/README.md](../pc-receiver/README.md).
 2. **Xbox:** open xISOBurn → **Settings**. Set Destination = *PC receiver*, enter the address, port
    and token, and use **Test connection**. It should say "OK: the receiver saves to ...". Then **Save**.
 3. Insert the disc → **Detect disc** → **Rescue / resume**. On a healthy disc pass 1 reads

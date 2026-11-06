@@ -6,31 +6,41 @@ packages it as `xisoburn-receiver.exe`, so nothing needs to be installed.
 
 ## Running it
 
-Download the **`xisoburn-receiver-N`** artifact from the latest **build** run on GitHub (Actions tab).
-Then open PowerShell in the folder where you extracted it:
+Download the **`xisoburn-receiver-N`** artifact from the latest **build** run on GitHub (Actions
+tab), unzip it and double-click **`xisoburn-receiver.exe`**. The exe isn't signed, so Windows
+SmartScreen may warn the first time: choose **More info → Run anyway**.
 
-```powershell
-.\xisoburn-receiver.exe --out D:\DVDs\backup
-```
+The window has:
 
-- `--out FOLDER`: one ISO per disc, named after the disc (for example `D:\DVDs\backup\ACQUARIA.iso`).
-- `--out FILE.iso`: always write to that exact file.
-- `--port 8770`: TCP port (default 8770).
-- `--token SECRET`: shared secret. If you leave it out, a token is generated on the first run and
-  kept in `xisoburn-receiver.token` next to the output, so it stays the same across runs.
+| Part | What it's for |
+|------|---------------|
+| **Settings** | Output folder (**Browse...**), port (default 8770) and token (**New token** makes another). They're remembered for next time in `%APPDATA%\xisoburn-receiver\settings.json`. |
+| **Start / Stop** | Starts or stops receiving. Stopping is safe: the Xbox app keeps retrying for a while and can always resume later. |
+| **Allow in Windows Firewall** | Creates the firewall rule for the port on private networks (Windows asks for administrator permission). |
+| **Open output folder** | Opens the folder with the ISOs in Explorer. |
+| **Type these on the Xbox** | The **PC address, port and token** to enter in xISOBurn → **Settings** on the Xbox. |
+| **Discs** | Every disc received in this session: size received, %, speed, status (*Receiving*, *Paused*, *Finished* with the start of the SHA-256). |
+| **Log** | What happened: discs created/resumed, progress every 5%, finished, and refused connections (usually a wrong token). |
 
-On start it prints the **address, port and token** to type into the Xbox app (**Settings**). Leave
-the window open while copying. **Ctrl+C** stops it, and the progress is kept.
+Closing the window while a disc is arriving asks for confirmation first; the progress is kept either way.
 
-With Python 3.8+ installed, `python xisoburn_receiver.py --out ...` works too.
+### Command line (optional)
+
+- `xisoburn-receiver.exe --out D:\DVDs\backup` opens the window with that folder and starts at once.
+- `--port 8770` and `--token SECRET` pre-fill those fields.
+- With Python 3.8+, `python xisoburn_receiver.py` opens the same window, and
+  `python xisoburn_receiver.py --nogui --out D:\DVDs\backup` runs in the console. In console mode a
+  token is generated on the first run and kept in `xisoburn-receiver.token` next to the output.
+- `--out FILE.iso` (console mode) always writes to that exact file instead of one ISO per disc.
 
 ## Windows Firewall
 
 The first time, Windows asks whether to allow the receiver on the network. Allow it on **private
-networks**. If you missed the prompt, run this once in an administrator PowerShell:
+networks**. If you missed the prompt, use **Allow in Windows Firewall** in the window, or run this
+once in an administrator PowerShell:
 
 ```powershell
-New-NetFirewallRule -DisplayName "xISOBurn receiver" -Direction Inbound -Protocol TCP -LocalPort 8770 -Action Allow -Profile Private
+New-NetFirewallRule -DisplayName 'xISOBurn receiver (TCP 8770)' -Direction Inbound -Protocol TCP -LocalPort 8770 -Action Allow -Profile Private
 ```
 
 Your PC's network must be set to **Private** (Settings → Network & internet → your connection →

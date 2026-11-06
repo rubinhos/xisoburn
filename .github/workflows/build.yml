@@ -141,12 +141,13 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --disable-pip-version-check pyinstaller
-          pyinstaller --onefile --console --name xisoburn-receiver --distpath out --workpath build pc-receiver/xisoburn_receiver.py
+          # --windowed: the .exe opens the receiver window (Tkinter) without a console window.
+          pyinstaller --onefile --windowed --name xisoburn-receiver --paths pc-receiver --hidden-import receiver_gui `
+            --distpath out --workpath build pc-receiver/xisoburn_receiver.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Copy-Item pc-receiver/xisoburn_receiver.py out/
-          Copy-Item pc-receiver/README.md out/
-          & out/xisoburn-receiver.exe --help
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path out/xisoburn-receiver.exe)) { throw "xisoburn-receiver.exe was not built" }
+          # The scripts too, for running with Python (python xisoburn_receiver.py [--nogui --out ...]).
+          Copy-Item pc-receiver/xisoburn_receiver.py, pc-receiver/receiver_gui.py, pc-receiver/README.md out/
 
       - uses: actions/upload-artifact@v7
         with:
