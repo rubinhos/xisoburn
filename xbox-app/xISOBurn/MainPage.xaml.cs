@@ -193,6 +193,7 @@ namespace xISOBurn
             CopyButton.IsEnabled = !busy;
             RetryButton.IsEnabled = !busy && _failedSectors > 0;
             ScanButton.IsEnabled = !busy;
+            CssTestButton.IsEnabled = !busy;
             SettingsButton.IsEnabled = !busy;
             CancelButton.IsEnabled = copying;
             if (copying) CancelButton.Focus(FocusState.Programmatic);
@@ -484,6 +485,53 @@ namespace xISOBurn
                 if (_cts != null) { _cts.Dispose(); _cts = null; }
                 SetBusy(false, false);
                 ScanButton.Focus(FocusState.Programmatic);
+            }
+        }
+
+        /// <summary>
+        /// Proof of concept (docs/css-poc.md): CSS authentication with the drive, disc and title keys,
+        /// and descrambling of the first 4 MiB of the first title VOB. Writes nothing to the image.
+        /// </summary>
+        private async void CssTestButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_busy) return;
+            SetBusy(true, false);
+            var display = new DisplayRequest();
+            bool displayActive = false;
+            try
+            {
+                string msg;
+                var cfg = CopyConfig.Load(_folder, out msg);
+                if (!await DetectAsync((uint)cfg.TimeoutSeconds))
+                {
+                    StatusText.Text = "No disc ready for the CSS test (see log).";
+                    return;
+                }
+                display.RequestActive();
+                displayActive = true;
+                _cts = new CancellationTokenSource();
+                SetBusy(true, true);
+                StatusText.Text = "CSS test: authenticating with the drive and descrambling a sample... B cancels.";
+                var progress = new Progress<string>(s => ProgressText.Text = "CSS test " + s);
+                var test = new CssTest(_drive, _probe, _log, _folder, (uint)cfg.TimeoutSeconds);
+                var token = _cts.Token;
+                StatusText.Text = await Task.Run(() => test.RunAsync(progress, token));
+            }
+            catch (OperationCanceledException)
+            {
+                StatusText.Text = "CSS test cancelled.";
+            }
+            catch (Exception ex)
+            {
+                _log.Info("ERROR in the CSS test: " + ex);
+                StatusText.Text = "Error: " + ex.Message;
+            }
+            finally
+            {
+                if (displayActive) display.RequestRelease();
+                if (_cts != null) { _cts.Dispose(); _cts = null; }
+                SetBusy(false, false);
+                CssTestButton.Focus(FocusState.Programmatic);
             }
         }
 

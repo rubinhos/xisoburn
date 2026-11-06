@@ -35,6 +35,8 @@
             <!-- Enabled only when a previous rescue of the inserted disc left failed sectors. -->
             <Button x:Name="RetryButton" Content="Retry failed" Click="RetryButton_Click" FontSize="15" Padding="12,5" IsEnabled="False"/>
             <Button x:Name="ScanButton" Content="Scan disc" Click="ScanButton_Click" FontSize="15" Padding="12,5"/>
+            <!-- Proof of concept: CSS authentication + descrambling (libdvdcss port), see docs/css-poc.md. -->
+            <Button x:Name="CssTestButton" Content="CSS test" Click="CssTestButton_Click" FontSize="15" Padding="12,5"/>
             <Button x:Name="SettingsButton" Content="Settings" Click="SettingsButton_Click" FontSize="15" Padding="12,5"/>
         </StackPanel>
 

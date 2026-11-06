@@ -73,6 +73,10 @@
     <Compile Include="Core\WebServer.cs" />
     <Compile Include="Core\RescueJob.cs" />
     <Compile Include="Core\SectorStateMap.cs" />
+    <Compile Include="Core\CssTest.cs" />
+    <Compile Include="Css\CssCipher.cs" />
+    <Compile Include="Css\CssDrive.cs" />
+    <Compile Include="Css\CssTables.cs" />
     <Compile Include="Scsi\OpticalDrive.cs" />
     <Compile Include="Scsi\ScsiCommands.cs" />
     <Compile Include="Scsi\ScsiResult.cs" />

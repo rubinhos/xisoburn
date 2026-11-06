@@ -19,7 +19,7 @@ namespace xISOBurn.Core
     ///
     ///   GET  /                 main page (or the PIN page)
     ///   POST /login            pin=NNNN, sets a cookie
-    ///   GET  /files/NAME.ext   download (.iso .map .sha256 .log); Range requests supported, so the
+    ///   GET  /files/NAME.ext   download (.iso .map .sha256 .log .vob); Range requests supported, so the
     ///                          browser can resume a download that was interrupted
     ///   POST /delete           name=NAME, deletes NAME.iso/.map/.sha256 from the Xbox
     ///
@@ -38,7 +38,7 @@ namespace xISOBurn.Core
         private const int MaxBodyBytes = 4096;
         private const int FileChunk = 1 << 20;
         private const string PinCookie = "xisoburn_pin";
-        private static readonly string[] Downloadable = { ".iso", ".map", ".sha256", ".log" };
+        private static readonly string[] Downloadable = { ".iso", ".map", ".sha256", ".log", ".vob" };
 
         private readonly Logger _log;
         private readonly string _folder;
@@ -268,7 +268,7 @@ namespace xISOBurn.Core
                 }
 
                 long count = length == 0 ? 0 : end - start + 1;
-                string type = iso ? "application/octet-stream" : "text/plain; charset=utf-8";
+                string type = iso || ext == ".vob" ? "application/octet-stream" : "text/plain; charset=utf-8";
                 string disposition = iso ? "attachment" : "inline";
                 string headers = "HTTP/1.1 " + (partial ? "206 Partial Content" : "200 OK") + "\r\n" +
                                  "Content-Type: " + type + "\r\n" +
@@ -427,6 +427,21 @@ namespace xISOBurn.Core
                 for (int i = 0; i < logs.Count && i < 30; i++)
                 {
                     string n = Path.GetFileName(logs[i]);
+                    sb.Append("<li><a href=\"/files/").Append(Uri.EscapeDataString(n)).Append("\">").Append(Enc(n)).Append("</a></li>");
+                }
+                sb.Append("</ul></details>");
+            }
+
+            // Samples saved by the CSS test (docs/css-poc.md): descrambled VOB pieces, playable in VLC.
+            var vobs = new List<string>(Directory.GetFiles(_folder, "css-test-*.vob"));
+            vobs.Sort(StringComparer.OrdinalIgnoreCase);
+            vobs.Reverse();
+            if (vobs.Count > 0)
+            {
+                sb.Append("<details id=\"csssamples\"><summary>CSS test samples (").Append(vobs.Count).Append(")</summary><ul>");
+                for (int i = 0; i < vobs.Count && i < 30; i++)
+                {
+                    string n = Path.GetFileName(vobs[i]);
                     sb.Append("<li><a href=\"/files/").Append(Uri.EscapeDataString(n)).Append("\">").Append(Enc(n)).Append("</a></li>");
                 }
                 sb.Append("</ul></details>");
