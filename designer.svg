@@ -4,7 +4,7 @@
     - left:  the app icon (rounded square)       -> crop 38,218 508x528 in make-assets.ps1
     - right: the logo (disc emblem + "xISOBurn") -> crop 560,286 964x392
   Render it to designer.png with xbox-app\tools\render-designer.ps1, then run make-assets.ps1.
-  Fonts: Bahnschrift and Arial Black (both ship with Windows).
+  Font: Bahnschrift (ships with Windows). The disc is drawn without any text or logo.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1536" height="1024" viewBox="0 0 1536 1024">
   <defs>
@@ -21,12 +21,6 @@
       <feComposite in2="b" operator="in" result="g"/>
       <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
-    <filter id="glowFire" x="-40%" y="-60%" width="180%" height="200%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="7" result="b"/>
-      <feFlood flood-color="#ff7a00" flood-opacity="0.8"/>
-      <feComposite in2="b" operator="in" result="g"/>
-      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
     <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
       <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000" flood-opacity="0.6"/>
     </filter>
@@ -38,24 +32,30 @@
     </filter>
 
     <!-- disc -->
-    <radialGradient id="silver" cx="38%" cy="30%" r="80%">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="0.35" stop-color="#e3e6e9"/>
-      <stop offset="0.68" stop-color="#a9aeb4"/>
-      <stop offset="0.86" stop-color="#d9dcdf"/>
-      <stop offset="1" stop-color="#868b91"/>
+    <radialGradient id="silver" cx="42%" cy="36%" r="78%">
+      <stop offset="0" stop-color="#fbfcfd"/>
+      <stop offset="0.45" stop-color="#dfe3e7"/>
+      <stop offset="0.8" stop-color="#b9bfc5"/>
+      <stop offset="1" stop-color="#9da4ab"/>
     </radialGradient>
-    <linearGradient id="rainbow" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
-      <stop offset="0.38" stop-color="#ffd6f5" stop-opacity="0.35"/>
-      <stop offset="0.5" stop-color="#c8f0ff" stop-opacity="0.45"/>
-      <stop offset="0.62" stop-color="#e6ffd0" stop-opacity="0.35"/>
-      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
-    </linearGradient>
+    <radialGradient id="discSheen" cx="50%" cy="50%" r="50%">
+      <stop offset="0.38" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.9" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.3"/>
+    </radialGradient>
+    <radialGradient id="clearRing" cx="45%" cy="40%" r="60%">
+      <stop offset="0" stop-color="#f4f6f8" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#c9ced3" stop-opacity="0.9"/>
+    </radialGradient>
     <radialGradient id="hub" cx="45%" cy="40%" r="70%">
-      <stop offset="0" stop-color="#e8ebee"/>
-      <stop offset="1" stop-color="#8e949a"/>
+      <stop offset="0" stop-color="#eef1f3"/>
+      <stop offset="1" stop-color="#aab0b6"/>
     </radialGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="10"/></filter>
+    <mask id="discHole" maskUnits="userSpaceOnUse" x="-200" y="-200" width="400" height="400">
+      <circle r="191" fill="#fff"/>
+      <circle r="22" fill="#000"/>
+    </mask>
 
     <!-- X badge -->
     <radialGradient id="badge" cx="40%" cy="35%" r="75%">
@@ -79,18 +79,6 @@
       <stop offset="1" stop-color="#f0a800"/>
     </linearGradient>
 
-    <!-- fire -->
-    <linearGradient id="flameOuter" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" stop-color="#d81e00"/>
-      <stop offset="0.55" stop-color="#ff5a00"/>
-      <stop offset="1" stop-color="#ff9a1a"/>
-    </linearGradient>
-    <linearGradient id="flameInner" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" stop-color="#ff9800"/>
-      <stop offset="0.6" stop-color="#ffd23a"/>
-      <stop offset="1" stop-color="#fff3a0"/>
-    </linearGradient>
-
     <!-- icon plate -->
     <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#141614"/>
@@ -101,25 +89,143 @@
       <stop offset="1" stop-color="#c9cdd1"/>
     </linearGradient>
 
-    <!-- One flame, base at 0,0, height about 100 (scaled per use). -->
-    <path id="flame" d="M0 0 C-30 -4 -40 -36 -22 -62 C-18 -44 -6 -40 -4 -56 C-2 -76 10 -88 6 -104 C30 -84 40 -52 30 -30 C38 -36 40 -46 38 -54 C52 -30 40 -2 0 0 Z"/>
-    <path id="flameCore" d="M0 0 C-16 -2 -20 -20 -10 -36 C-8 -26 0 -24 0 -34 C2 -46 8 -52 6 -62 C20 -48 24 -28 16 -14 C22 -18 22 -24 22 -28 C28 -14 20 -1 0 0 Z"/>
-
     <!-- Disc, centered on 0,0, radius 190. -->
     <g id="disc">
-      <circle r="190" fill="url(#silver)" stroke="#6f757b" stroke-width="3"/>
-      <path d="M0 0 L-60 -181 A190 190 0 0 1 60 -181 Z" fill="#ffffff" opacity="0.35"/>
-      <path d="M0 0 L181 -60 A190 190 0 0 1 181 60 Z" fill="#ffffff" opacity="0.18"/>
-      <path d="M0 0 L60 181 A190 190 0 0 1 -60 181 Z" fill="#ffffff" opacity="0.30"/>
-      <path d="M0 0 L-181 60 A190 190 0 0 1 -181 -60 Z" fill="#ffffff" opacity="0.15"/>
-      <circle r="186" fill="url(#rainbow)"/>
-      <circle r="150" fill="none" stroke="#ffffff" stroke-opacity="0.25" stroke-width="2"/>
-      <circle r="64" fill="url(#hub)" stroke="#7d838a" stroke-width="3"/>
-      <circle r="48" fill="none" stroke="#6b7177" stroke-width="5"/>
-      <circle r="36" fill="#b8bdc2"/>
-      <circle r="20" fill="#121212" stroke="#555b60" stroke-width="2"/>
-      <text x="0" y="-92" text-anchor="middle" font-family="Arial Black, Arial" font-weight="900" font-style="italic"
-            font-size="62" fill="#1b1d1f" letter-spacing="-2">DVD</text>
+      <!-- Realistic disc, no text or logo: silver base, iridescent data area, clear inner ring, hub hole. -->
+      <g mask="url(#discHole)">
+        <circle r="190" fill="url(#silver)"/>
+        <path d="M0.00 -74.00 L0.00 -187.00 A187 187 0 0 1 10.57 -186.70 L4.18 -73.88 A74 74 0 0 0 0.00 -74.00 Z" fill="hsl(200,85%,68%)" fill-opacity="0.085"/>
+        <path d="M3.87 -73.90 L9.79 -186.74 A187 187 0 0 1 20.33 -185.89 L8.04 -73.56 A74 74 0 0 0 3.87 -73.90 Z" fill="hsl(206,85%,68%)" fill-opacity="0.074"/>
+        <path d="M7.74 -73.59 L19.55 -185.98 A187 187 0 0 1 30.03 -184.57 L11.88 -73.04 A74 74 0 0 0 7.74 -73.59 Z" fill="hsl(212,85%,68%)" fill-opacity="0.066"/>
+        <path d="M11.58 -73.09 L29.25 -184.70 A187 187 0 0 1 39.65 -182.75 L15.69 -72.32 A74 74 0 0 0 11.58 -73.09 Z" fill="hsl(218,85%,68%)" fill-opacity="0.060"/>
+        <path d="M15.39 -72.38 L38.88 -182.91 A187 187 0 0 1 49.16 -180.42 L19.45 -71.40 A74 74 0 0 0 15.39 -72.38 Z" fill="hsl(224,85%,68%)" fill-opacity="0.056"/>
+        <path d="M19.15 -71.48 L48.40 -180.63 A187 187 0 0 1 58.53 -177.60 L23.16 -70.28 A74 74 0 0 0 19.15 -71.48 Z" fill="hsl(230,85%,68%)" fill-opacity="0.053"/>
+        <path d="M22.87 -70.38 L57.79 -177.85 A187 187 0 0 1 67.75 -174.30 L26.81 -68.97 A74 74 0 0 0 22.87 -70.38 Z" fill="hsl(236,85%,68%)" fill-opacity="0.052"/>
+        <path d="M26.52 -69.08 L67.01 -174.58 A187 187 0 0 1 76.77 -170.51 L30.38 -67.48 A74 74 0 0 0 26.52 -69.08 Z" fill="hsl(242,85%,68%)" fill-opacity="0.051"/>
+        <path d="M30.10 -67.60 L76.06 -170.83 A187 187 0 0 1 85.59 -166.26 L33.87 -65.79 A74 74 0 0 0 30.10 -67.60 Z" fill="hsl(248,85%,68%)" fill-opacity="0.050"/>
+        <path d="M33.60 -65.93 L84.90 -166.62 A187 187 0 0 1 94.18 -161.55 L37.27 -63.93 A74 74 0 0 0 33.60 -65.93 Z" fill="hsl(254,85%,68%)" fill-opacity="0.050"/>
+        <path d="M37.00 -64.09 L93.50 -161.95 A187 187 0 0 1 102.50 -156.40 L40.56 -61.89 A74 74 0 0 0 37.00 -64.09 Z" fill="hsl(260,85%,68%)" fill-opacity="0.050"/>
+        <path d="M40.30 -62.06 L101.85 -156.83 A187 187 0 0 1 110.55 -150.82 L43.75 -59.68 A74 74 0 0 0 40.30 -62.06 Z" fill="hsl(266,85%,68%)" fill-opacity="0.050"/>
+        <path d="M43.50 -59.87 L109.92 -151.29 A187 187 0 0 1 118.29 -144.83 L46.81 -57.31 A74 74 0 0 0 43.50 -59.87 Z" fill="hsl(272,85%,68%)" fill-opacity="0.050"/>
+        <path d="M46.57 -57.51 L117.68 -145.33 A187 187 0 0 1 125.71 -138.44 L49.75 -54.78 A74 74 0 0 0 46.57 -57.51 Z" fill="hsl(278,85%,68%)" fill-opacity="0.050"/>
+        <path d="M49.52 -54.99 L125.13 -138.97 A187 187 0 0 1 132.78 -131.67 L52.54 -52.11 A74 74 0 0 0 49.52 -54.99 Z" fill="hsl(284,85%,68%)" fill-opacity="0.050"/>
+        <path d="M52.33 -52.33 L132.23 -132.23 A187 187 0 0 1 139.49 -124.54 L55.20 -49.28 A74 74 0 0 0 52.33 -52.33 Z" fill="hsl(290,85%,68%)" fill-opacity="0.050"/>
+        <path d="M54.99 -49.52 L138.97 -125.13 A187 187 0 0 1 145.82 -117.07 L57.70 -46.33 A74 74 0 0 0 54.99 -49.52 Z" fill="hsl(296,85%,68%)" fill-opacity="0.050"/>
+        <path d="M57.51 -46.57 L145.33 -117.68 A187 187 0 0 1 151.75 -109.28 L60.05 -43.24 A74 74 0 0 0 57.51 -46.57 Z" fill="hsl(302,85%,68%)" fill-opacity="0.050"/>
+        <path d="M59.87 -43.50 L151.29 -109.92 A187 187 0 0 1 157.26 -101.19 L62.23 -40.04 A74 74 0 0 0 59.87 -43.50 Z" fill="hsl(308,85%,68%)" fill-opacity="0.050"/>
+        <path d="M62.06 -40.30 L156.83 -101.85 A187 187 0 0 1 162.34 -92.82 L64.24 -36.73 A74 74 0 0 0 62.06 -40.30 Z" fill="hsl(314,85%,68%)" fill-opacity="0.050"/>
+        <path d="M64.09 -37.00 L161.95 -93.50 A187 187 0 0 1 166.97 -84.20 L66.07 -33.32 A74 74 0 0 0 64.09 -37.00 Z" fill="hsl(320,85%,68%)" fill-opacity="0.050"/>
+        <path d="M65.93 -33.60 L166.62 -84.90 A187 187 0 0 1 171.15 -75.34 L67.73 -29.82 A74 74 0 0 0 65.93 -33.60 Z" fill="hsl(326,85%,68%)" fill-opacity="0.051"/>
+        <path d="M67.60 -30.10 L170.83 -76.06 A187 187 0 0 1 174.86 -66.28 L69.20 -26.23 A74 74 0 0 0 67.60 -30.10 Z" fill="hsl(332,85%,68%)" fill-opacity="0.052"/>
+        <path d="M69.08 -26.52 L174.58 -67.01 A187 187 0 0 1 178.09 -57.04 L70.47 -22.57 A74 74 0 0 0 69.08 -26.52 Z" fill="hsl(338,85%,68%)" fill-opacity="0.054"/>
+        <path d="M70.38 -22.87 L177.85 -57.79 A187 187 0 0 1 180.83 -47.64 L71.56 -18.85 A74 74 0 0 0 70.38 -22.87 Z" fill="hsl(344,85%,68%)" fill-opacity="0.057"/>
+        <path d="M71.48 -19.15 L180.63 -48.40 A187 187 0 0 1 183.07 -38.11 L72.45 -15.08 A74 74 0 0 0 71.48 -19.15 Z" fill="hsl(350,85%,68%)" fill-opacity="0.062"/>
+        <path d="M72.38 -15.39 L182.91 -38.88 A187 187 0 0 1 184.82 -28.48 L73.14 -11.27 A74 74 0 0 0 72.38 -15.39 Z" fill="hsl(356,85%,68%)" fill-opacity="0.069"/>
+        <path d="M73.09 -11.58 L184.70 -29.25 A187 187 0 0 1 186.06 -18.77 L73.63 -7.43 A74 74 0 0 0 73.09 -11.58 Z" fill="hsl(2,85%,68%)" fill-opacity="0.078"/>
+        <path d="M73.59 -7.74 L185.98 -19.55 A187 187 0 0 1 186.78 -9.00 L73.91 -3.56 A74 74 0 0 0 73.59 -7.74 Z" fill="hsl(8,85%,68%)" fill-opacity="0.091"/>
+        <path d="M73.90 -3.87 L186.74 -9.79 A187 187 0 0 1 187.00 0.78 L74.00 0.31 A74 74 0 0 0 73.90 -3.87 Z" fill="hsl(14,85%,68%)" fill-opacity="0.106"/>
+        <path d="M74.00 0.00 L187.00 0.00 A187 187 0 0 1 186.70 10.57 L73.88 4.18 A74 74 0 0 0 74.00 0.00 Z" fill="hsl(20,85%,68%)" fill-opacity="0.125"/>
+        <path d="M73.90 3.87 L186.74 9.79 A187 187 0 0 1 185.89 20.33 L73.56 8.04 A74 74 0 0 0 73.90 3.87 Z" fill="hsl(26,85%,68%)" fill-opacity="0.148"/>
+        <path d="M73.59 7.74 L185.98 19.55 A187 187 0 0 1 184.57 30.03 L73.04 11.88 A74 74 0 0 0 73.59 7.74 Z" fill="hsl(32,85%,68%)" fill-opacity="0.174"/>
+        <path d="M73.09 11.58 L184.70 29.25 A187 187 0 0 1 182.75 39.65 L72.32 15.69 A74 74 0 0 0 73.09 11.58 Z" fill="hsl(38,85%,68%)" fill-opacity="0.203"/>
+        <path d="M72.38 15.39 L182.91 38.88 A187 187 0 0 1 180.42 49.16 L71.40 19.45 A74 74 0 0 0 72.38 15.39 Z" fill="hsl(44,85%,68%)" fill-opacity="0.234"/>
+        <path d="M71.48 19.15 L180.63 48.40 A187 187 0 0 1 177.60 58.53 L70.28 23.16 A74 74 0 0 0 71.48 19.15 Z" fill="hsl(50,85%,68%)" fill-opacity="0.267"/>
+        <path d="M70.38 22.87 L177.85 57.79 A187 187 0 0 1 174.30 67.75 L68.97 26.81 A74 74 0 0 0 70.38 22.87 Z" fill="hsl(56,85%,68%)" fill-opacity="0.302"/>
+        <path d="M69.08 26.52 L174.58 67.01 A187 187 0 0 1 170.51 76.77 L67.48 30.38 A74 74 0 0 0 69.08 26.52 Z" fill="hsl(62,85%,68%)" fill-opacity="0.335"/>
+        <path d="M67.60 30.10 L170.83 76.06 A187 187 0 0 1 166.26 85.59 L65.79 33.87 A74 74 0 0 0 67.60 30.10 Z" fill="hsl(68,85%,68%)" fill-opacity="0.368"/>
+        <path d="M65.93 33.60 L166.62 84.90 A187 187 0 0 1 161.55 94.18 L63.93 37.27 A74 74 0 0 0 65.93 33.60 Z" fill="hsl(74,85%,68%)" fill-opacity="0.397"/>
+        <path d="M64.09 37.00 L161.95 93.50 A187 187 0 0 1 156.40 102.50 L61.89 40.56 A74 74 0 0 0 64.09 37.00 Z" fill="hsl(80,85%,68%)" fill-opacity="0.423"/>
+        <path d="M62.06 40.30 L156.83 101.85 A187 187 0 0 1 150.82 110.55 L59.68 43.75 A74 74 0 0 0 62.06 40.30 Z" fill="hsl(86,85%,68%)" fill-opacity="0.444"/>
+        <path d="M59.87 43.50 L151.29 109.92 A187 187 0 0 1 144.83 118.29 L57.31 46.81 A74 74 0 0 0 59.87 43.50 Z" fill="hsl(92,85%,68%)" fill-opacity="0.459"/>
+        <path d="M57.51 46.57 L145.33 117.68 A187 187 0 0 1 138.44 125.71 L54.78 49.75 A74 74 0 0 0 57.51 46.57 Z" fill="hsl(98,85%,68%)" fill-opacity="0.468"/>
+        <path d="M54.99 49.52 L138.97 125.13 A187 187 0 0 1 131.67 132.78 L52.11 52.54 A74 74 0 0 0 54.99 49.52 Z" fill="hsl(104,85%,68%)" fill-opacity="0.470"/>
+        <path d="M52.33 52.33 L132.23 132.23 A187 187 0 0 1 124.54 139.49 L49.28 55.20 A74 74 0 0 0 52.33 52.33 Z" fill="hsl(110,85%,68%)" fill-opacity="0.465"/>
+        <path d="M49.52 54.99 L125.13 138.97 A187 187 0 0 1 117.07 145.82 L46.33 57.70 A74 74 0 0 0 49.52 54.99 Z" fill="hsl(116,85%,68%)" fill-opacity="0.453"/>
+        <path d="M46.57 57.51 L117.68 145.33 A187 187 0 0 1 109.28 151.75 L43.24 60.05 A74 74 0 0 0 46.57 57.51 Z" fill="hsl(122,85%,68%)" fill-opacity="0.436"/>
+        <path d="M43.50 59.87 L109.92 151.29 A187 187 0 0 1 101.19 157.26 L40.04 62.23 A74 74 0 0 0 43.50 59.87 Z" fill="hsl(128,85%,68%)" fill-opacity="0.412"/>
+        <path d="M40.30 62.06 L101.85 156.83 A187 187 0 0 1 92.82 162.34 L36.73 64.24 A74 74 0 0 0 40.30 62.06 Z" fill="hsl(134,85%,68%)" fill-opacity="0.385"/>
+        <path d="M37.00 64.09 L93.50 161.95 A187 187 0 0 1 84.20 166.97 L33.32 66.07 A74 74 0 0 0 37.00 64.09 Z" fill="hsl(140,85%,68%)" fill-opacity="0.354"/>
+        <path d="M33.60 65.93 L84.90 166.62 A187 187 0 0 1 75.34 171.15 L29.82 67.73 A74 74 0 0 0 33.60 65.93 Z" fill="hsl(146,85%,68%)" fill-opacity="0.321"/>
+        <path d="M30.10 67.60 L76.06 170.83 A187 187 0 0 1 66.28 174.86 L26.23 69.20 A74 74 0 0 0 30.10 67.60 Z" fill="hsl(152,85%,68%)" fill-opacity="0.287"/>
+        <path d="M26.52 69.08 L67.01 174.58 A187 187 0 0 1 57.04 178.09 L22.57 70.47 A74 74 0 0 0 26.52 69.08 Z" fill="hsl(158,85%,68%)" fill-opacity="0.253"/>
+        <path d="M22.87 70.38 L57.79 177.85 A187 187 0 0 1 47.64 180.83 L18.85 71.56 A74 74 0 0 0 22.87 70.38 Z" fill="hsl(164,85%,68%)" fill-opacity="0.220"/>
+        <path d="M19.15 71.48 L48.40 180.63 A187 187 0 0 1 38.11 183.07 L15.08 72.45 A74 74 0 0 0 19.15 71.48 Z" fill="hsl(170,85%,68%)" fill-opacity="0.190"/>
+        <path d="M15.39 72.38 L38.88 182.91 A187 187 0 0 1 28.48 184.82 L11.27 73.14 A74 74 0 0 0 15.39 72.38 Z" fill="hsl(176,85%,68%)" fill-opacity="0.162"/>
+        <path d="M11.58 73.09 L29.25 184.70 A187 187 0 0 1 18.77 186.06 L7.43 73.63 A74 74 0 0 0 11.58 73.09 Z" fill="hsl(182,85%,68%)" fill-opacity="0.138"/>
+        <path d="M7.74 73.59 L19.55 185.98 A187 187 0 0 1 9.00 186.78 L3.56 73.91 A74 74 0 0 0 7.74 73.59 Z" fill="hsl(188,85%,68%)" fill-opacity="0.117"/>
+        <path d="M3.87 73.90 L9.79 186.74 A187 187 0 0 1 -0.78 187.00 L-0.31 74.00 A74 74 0 0 0 3.87 73.90 Z" fill="hsl(194,85%,68%)" fill-opacity="0.099"/>
+        <path d="M0.00 74.00 L0.00 187.00 A187 187 0 0 1 -10.57 186.70 L-4.18 73.88 A74 74 0 0 0 0.00 74.00 Z" fill="hsl(200,85%,68%)" fill-opacity="0.085"/>
+        <path d="M-3.87 73.90 L-9.79 186.74 A187 187 0 0 1 -20.33 185.89 L-8.04 73.56 A74 74 0 0 0 -3.87 73.90 Z" fill="hsl(206,85%,68%)" fill-opacity="0.074"/>
+        <path d="M-7.74 73.59 L-19.55 185.98 A187 187 0 0 1 -30.03 184.57 L-11.88 73.04 A74 74 0 0 0 -7.74 73.59 Z" fill="hsl(212,85%,68%)" fill-opacity="0.066"/>
+        <path d="M-11.58 73.09 L-29.25 184.70 A187 187 0 0 1 -39.65 182.75 L-15.69 72.32 A74 74 0 0 0 -11.58 73.09 Z" fill="hsl(218,85%,68%)" fill-opacity="0.060"/>
+        <path d="M-15.39 72.38 L-38.88 182.91 A187 187 0 0 1 -49.16 180.42 L-19.45 71.40 A74 74 0 0 0 -15.39 72.38 Z" fill="hsl(224,85%,68%)" fill-opacity="0.056"/>
+        <path d="M-19.15 71.48 L-48.40 180.63 A187 187 0 0 1 -58.53 177.60 L-23.16 70.28 A74 74 0 0 0 -19.15 71.48 Z" fill="hsl(230,85%,68%)" fill-opacity="0.053"/>
+        <path d="M-22.87 70.38 L-57.79 177.85 A187 187 0 0 1 -67.75 174.30 L-26.81 68.97 A74 74 0 0 0 -22.87 70.38 Z" fill="hsl(236,85%,68%)" fill-opacity="0.052"/>
+        <path d="M-26.52 69.08 L-67.01 174.58 A187 187 0 0 1 -76.77 170.51 L-30.38 67.48 A74 74 0 0 0 -26.52 69.08 Z" fill="hsl(242,85%,68%)" fill-opacity="0.051"/>
+        <path d="M-30.10 67.60 L-76.06 170.83 A187 187 0 0 1 -85.59 166.26 L-33.87 65.79 A74 74 0 0 0 -30.10 67.60 Z" fill="hsl(248,85%,68%)" fill-opacity="0.050"/>
+        <path d="M-33.60 65.93 L-84.90 166.62 A187 187 0 0 1 -94.18 161.55 L-37.27 63.93 A74 74 0 0 0 -33.60 65.93 Z" fill="hsl(254,85%,68%)" fill-opacity="0.050"/>
+        <path d="M-37.00 64.09 L-93.50 161.95 A187 187 0 0 1 -102.50 156.40 L-40.56 61.89 A74 74 0 0 0 -37.00 64.09 Z" fill="hsl(260,85%,68%)" fill-opacity="0.050"/>
+        <path d="M-40.30 62.06 L-101.85 156.83 A187 187 0 0 1 -110.55 150.82 L-43.75 59.68 A74 74 0 0 0 -40.30 62.06 Z" fill="hsl(266,85%,68%)" fill-opacity="0.050"/>
+        <path d="M-43.50 59.87 L-109.92 151.29 A187 187 0 0 1 -118.29 144.83 L-46.81 57.31 A74 74 0 0 0 -43.50 59.87 Z" fill="hsl(272,85%,68%)" fill-opacity="0.050"/>
+        <path d="M-46.57 57.51 L-117.68 145.33 A187 187 0 0 1 -125.71 138.44 L-49.75 54.78 A74 74 0 0 0 -46.57 57.51 Z" fill="hsl(278,85%,68%)" fill-opacity="0.050"/>
+        <path d="M-49.52 54.99 L-125.13 138.97 A187 187 0 0 1 -132.78 131.67 L-52.54 52.11 A74 74 0 0 0 -49.52 54.99 Z" fill="hsl(284,85%,68%)" fill-opacity="0.050"/>
+        <path d="M-52.33 52.33 L-132.23 132.23 A187 187 0 0 1 -139.49 124.54 L-55.20 49.28 A74 74 0 0 0 -52.33 52.33 Z" fill="hsl(290,85%,68%)" fill-opacity="0.050"/>
+        <path d="M-54.99 49.52 L-138.97 125.13 A187 187 0 0 1 -145.82 117.07 L-57.70 46.33 A74 74 0 0 0 -54.99 49.52 Z" fill="hsl(296,85%,68%)" fill-opacity="0.050"/>
+        <path d="M-57.51 46.57 L-145.33 117.68 A187 187 0 0 1 -151.75 109.28 L-60.05 43.24 A74 74 0 0 0 -57.51 46.57 Z" fill="hsl(302,85%,68%)" fill-opacity="0.050"/>
+        <path d="M-59.87 43.50 L-151.29 109.92 A187 187 0 0 1 -157.26 101.19 L-62.23 40.04 A74 74 0 0 0 -59.87 43.50 Z" fill="hsl(308,85%,68%)" fill-opacity="0.050"/>
+        <path d="M-62.06 40.30 L-156.83 101.85 A187 187 0 0 1 -162.34 92.82 L-64.24 36.73 A74 74 0 0 0 -62.06 40.30 Z" fill="hsl(314,85%,68%)" fill-opacity="0.050"/>
+        <path d="M-64.09 37.00 L-161.95 93.50 A187 187 0 0 1 -166.97 84.20 L-66.07 33.32 A74 74 0 0 0 -64.09 37.00 Z" fill="hsl(320,85%,68%)" fill-opacity="0.050"/>
+        <path d="M-65.93 33.60 L-166.62 84.90 A187 187 0 0 1 -171.15 75.34 L-67.73 29.82 A74 74 0 0 0 -65.93 33.60 Z" fill="hsl(326,85%,68%)" fill-opacity="0.051"/>
+        <path d="M-67.60 30.10 L-170.83 76.06 A187 187 0 0 1 -174.86 66.28 L-69.20 26.23 A74 74 0 0 0 -67.60 30.10 Z" fill="hsl(332,85%,68%)" fill-opacity="0.052"/>
+        <path d="M-69.08 26.52 L-174.58 67.01 A187 187 0 0 1 -178.09 57.04 L-70.47 22.57 A74 74 0 0 0 -69.08 26.52 Z" fill="hsl(338,85%,68%)" fill-opacity="0.054"/>
+        <path d="M-70.38 22.87 L-177.85 57.79 A187 187 0 0 1 -180.83 47.64 L-71.56 18.85 A74 74 0 0 0 -70.38 22.87 Z" fill="hsl(344,85%,68%)" fill-opacity="0.057"/>
+        <path d="M-71.48 19.15 L-180.63 48.40 A187 187 0 0 1 -183.07 38.11 L-72.45 15.08 A74 74 0 0 0 -71.48 19.15 Z" fill="hsl(350,85%,68%)" fill-opacity="0.062"/>
+        <path d="M-72.38 15.39 L-182.91 38.88 A187 187 0 0 1 -184.82 28.48 L-73.14 11.27 A74 74 0 0 0 -72.38 15.39 Z" fill="hsl(356,85%,68%)" fill-opacity="0.069"/>
+        <path d="M-73.09 11.58 L-184.70 29.25 A187 187 0 0 1 -186.06 18.77 L-73.63 7.43 A74 74 0 0 0 -73.09 11.58 Z" fill="hsl(2,85%,68%)" fill-opacity="0.078"/>
+        <path d="M-73.59 7.74 L-185.98 19.55 A187 187 0 0 1 -186.78 9.00 L-73.91 3.56 A74 74 0 0 0 -73.59 7.74 Z" fill="hsl(8,85%,68%)" fill-opacity="0.091"/>
+        <path d="M-73.90 3.87 L-186.74 9.79 A187 187 0 0 1 -187.00 -0.78 L-74.00 -0.31 A74 74 0 0 0 -73.90 3.87 Z" fill="hsl(14,85%,68%)" fill-opacity="0.106"/>
+        <path d="M-74.00 0.00 L-187.00 0.00 A187 187 0 0 1 -186.70 -10.57 L-73.88 -4.18 A74 74 0 0 0 -74.00 0.00 Z" fill="hsl(20,85%,68%)" fill-opacity="0.125"/>
+        <path d="M-73.90 -3.87 L-186.74 -9.79 A187 187 0 0 1 -185.89 -20.33 L-73.56 -8.04 A74 74 0 0 0 -73.90 -3.87 Z" fill="hsl(26,85%,68%)" fill-opacity="0.148"/>
+        <path d="M-73.59 -7.74 L-185.98 -19.55 A187 187 0 0 1 -184.57 -30.03 L-73.04 -11.88 A74 74 0 0 0 -73.59 -7.74 Z" fill="hsl(32,85%,68%)" fill-opacity="0.174"/>
+        <path d="M-73.09 -11.58 L-184.70 -29.25 A187 187 0 0 1 -182.75 -39.65 L-72.32 -15.69 A74 74 0 0 0 -73.09 -11.58 Z" fill="hsl(38,85%,68%)" fill-opacity="0.203"/>
+        <path d="M-72.38 -15.39 L-182.91 -38.88 A187 187 0 0 1 -180.42 -49.16 L-71.40 -19.45 A74 74 0 0 0 -72.38 -15.39 Z" fill="hsl(44,85%,68%)" fill-opacity="0.234"/>
+        <path d="M-71.48 -19.15 L-180.63 -48.40 A187 187 0 0 1 -177.60 -58.53 L-70.28 -23.16 A74 74 0 0 0 -71.48 -19.15 Z" fill="hsl(50,85%,68%)" fill-opacity="0.267"/>
+        <path d="M-70.38 -22.87 L-177.85 -57.79 A187 187 0 0 1 -174.30 -67.75 L-68.97 -26.81 A74 74 0 0 0 -70.38 -22.87 Z" fill="hsl(56,85%,68%)" fill-opacity="0.302"/>
+        <path d="M-69.08 -26.52 L-174.58 -67.01 A187 187 0 0 1 -170.51 -76.77 L-67.48 -30.38 A74 74 0 0 0 -69.08 -26.52 Z" fill="hsl(62,85%,68%)" fill-opacity="0.335"/>
+        <path d="M-67.60 -30.10 L-170.83 -76.06 A187 187 0 0 1 -166.26 -85.59 L-65.79 -33.87 A74 74 0 0 0 -67.60 -30.10 Z" fill="hsl(68,85%,68%)" fill-opacity="0.368"/>
+        <path d="M-65.93 -33.60 L-166.62 -84.90 A187 187 0 0 1 -161.55 -94.18 L-63.93 -37.27 A74 74 0 0 0 -65.93 -33.60 Z" fill="hsl(74,85%,68%)" fill-opacity="0.397"/>
+        <path d="M-64.09 -37.00 L-161.95 -93.50 A187 187 0 0 1 -156.40 -102.50 L-61.89 -40.56 A74 74 0 0 0 -64.09 -37.00 Z" fill="hsl(80,85%,68%)" fill-opacity="0.423"/>
+        <path d="M-62.06 -40.30 L-156.83 -101.85 A187 187 0 0 1 -150.82 -110.55 L-59.68 -43.75 A74 74 0 0 0 -62.06 -40.30 Z" fill="hsl(86,85%,68%)" fill-opacity="0.444"/>
+        <path d="M-59.87 -43.50 L-151.29 -109.92 A187 187 0 0 1 -144.83 -118.29 L-57.31 -46.81 A74 74 0 0 0 -59.87 -43.50 Z" fill="hsl(92,85%,68%)" fill-opacity="0.459"/>
+        <path d="M-57.51 -46.57 L-145.33 -117.68 A187 187 0 0 1 -138.44 -125.71 L-54.78 -49.75 A74 74 0 0 0 -57.51 -46.57 Z" fill="hsl(98,85%,68%)" fill-opacity="0.468"/>
+        <path d="M-54.99 -49.52 L-138.97 -125.13 A187 187 0 0 1 -131.67 -132.78 L-52.11 -52.54 A74 74 0 0 0 -54.99 -49.52 Z" fill="hsl(104,85%,68%)" fill-opacity="0.470"/>
+        <path d="M-52.33 -52.33 L-132.23 -132.23 A187 187 0 0 1 -124.54 -139.49 L-49.28 -55.20 A74 74 0 0 0 -52.33 -52.33 Z" fill="hsl(110,85%,68%)" fill-opacity="0.465"/>
+        <path d="M-49.52 -54.99 L-125.13 -138.97 A187 187 0 0 1 -117.07 -145.82 L-46.33 -57.70 A74 74 0 0 0 -49.52 -54.99 Z" fill="hsl(116,85%,68%)" fill-opacity="0.453"/>
+        <path d="M-46.57 -57.51 L-117.68 -145.33 A187 187 0 0 1 -109.28 -151.75 L-43.24 -60.05 A74 74 0 0 0 -46.57 -57.51 Z" fill="hsl(122,85%,68%)" fill-opacity="0.436"/>
+        <path d="M-43.50 -59.87 L-109.92 -151.29 A187 187 0 0 1 -101.19 -157.26 L-40.04 -62.23 A74 74 0 0 0 -43.50 -59.87 Z" fill="hsl(128,85%,68%)" fill-opacity="0.412"/>
+        <path d="M-40.30 -62.06 L-101.85 -156.83 A187 187 0 0 1 -92.82 -162.34 L-36.73 -64.24 A74 74 0 0 0 -40.30 -62.06 Z" fill="hsl(134,85%,68%)" fill-opacity="0.385"/>
+        <path d="M-37.00 -64.09 L-93.50 -161.95 A187 187 0 0 1 -84.20 -166.97 L-33.32 -66.07 A74 74 0 0 0 -37.00 -64.09 Z" fill="hsl(140,85%,68%)" fill-opacity="0.354"/>
+        <path d="M-33.60 -65.93 L-84.90 -166.62 A187 187 0 0 1 -75.34 -171.15 L-29.82 -67.73 A74 74 0 0 0 -33.60 -65.93 Z" fill="hsl(146,85%,68%)" fill-opacity="0.321"/>
+        <path d="M-30.10 -67.60 L-76.06 -170.83 A187 187 0 0 1 -66.28 -174.86 L-26.23 -69.20 A74 74 0 0 0 -30.10 -67.60 Z" fill="hsl(152,85%,68%)" fill-opacity="0.287"/>
+        <path d="M-26.52 -69.08 L-67.01 -174.58 A187 187 0 0 1 -57.04 -178.09 L-22.57 -70.47 A74 74 0 0 0 -26.52 -69.08 Z" fill="hsl(158,85%,68%)" fill-opacity="0.253"/>
+        <path d="M-22.87 -70.38 L-57.79 -177.85 A187 187 0 0 1 -47.64 -180.83 L-18.85 -71.56 A74 74 0 0 0 -22.87 -70.38 Z" fill="hsl(164,85%,68%)" fill-opacity="0.220"/>
+        <path d="M-19.15 -71.48 L-48.40 -180.63 A187 187 0 0 1 -38.11 -183.07 L-15.08 -72.45 A74 74 0 0 0 -19.15 -71.48 Z" fill="hsl(170,85%,68%)" fill-opacity="0.190"/>
+        <path d="M-15.39 -72.38 L-38.88 -182.91 A187 187 0 0 1 -28.48 -184.82 L-11.27 -73.14 A74 74 0 0 0 -15.39 -72.38 Z" fill="hsl(176,85%,68%)" fill-opacity="0.162"/>
+        <path d="M-11.58 -73.09 L-29.25 -184.70 A187 187 0 0 1 -18.77 -186.06 L-7.43 -73.63 A74 74 0 0 0 -11.58 -73.09 Z" fill="hsl(182,85%,68%)" fill-opacity="0.138"/>
+        <path d="M-7.74 -73.59 L-19.55 -185.98 A187 187 0 0 1 -9.00 -186.78 L-3.56 -73.91 A74 74 0 0 0 -7.74 -73.59 Z" fill="hsl(188,85%,68%)" fill-opacity="0.117"/>
+        <path d="M-3.87 -73.90 L-9.79 -186.74 A187 187 0 0 1 0.78 -187.00 L0.31 -74.00 A74 74 0 0 0 -3.87 -73.90 Z" fill="hsl(194,85%,68%)" fill-opacity="0.099"/>
+        <circle r="186" fill="url(#discSheen)"/>
+        <path d="M0 0 L-46 -184 A190 190 0 0 1 22 -189 Z" fill="#ffffff" opacity="0.55" filter="url(#soft)"/>
+        <path d="M0 0 L46 184 A190 190 0 0 1 -22 189 Z" fill="#ffffff" opacity="0.45" filter="url(#soft)"/>
+        <circle r="74" fill="url(#clearRing)"/>
+        <circle r="74" fill="none" stroke="#9aa1a8" stroke-opacity="0.7" stroke-width="1.5"/>
+        <circle r="56" fill="none" stroke="#c3c8cd" stroke-width="7"/>
+        <circle r="56" fill="none" stroke="#8d949b" stroke-opacity="0.6" stroke-width="1"/>
+        <circle r="34" fill="url(#hub)"/>
+        <circle r="189" fill="none" stroke="#7d848b" stroke-width="2.5"/>
+        <circle r="183" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
+        <circle r="23" fill="none" stroke="#6f767d" stroke-width="2"/>
+      </g>
     </g>
 
     <!-- Stylized X badge, centered on 0,0, radius 80. Curved arms, not the Xbox sphere. -->
@@ -132,21 +238,8 @@
       <path d="M-46 -46 Q-24 -38 -4 -18" stroke="#f0ffe0" stroke-opacity="0.8" stroke-width="4" stroke-linecap="round" fill="none"/>
     </g>
 
-    <!-- Yellow folder with fire beneath it. Folder box: x -110..110, y -80..80; fire below to y 160. -->
-    <g id="burningFolder">
-      <g filter="url(#glowFire)">
-        <use xlink:href="#flame" transform="translate(-118 150) scale(0.70 1.05)" fill="url(#flameOuter)"/>
-        <use xlink:href="#flame" transform="translate(-74 156) scale(0.85 1.30)" fill="url(#flameOuter)"/>
-        <use xlink:href="#flame" transform="translate(-26 160) scale(0.92 1.45)" fill="url(#flameOuter)"/>
-        <use xlink:href="#flame" transform="translate(24 160) scale(0.90 1.40)" fill="url(#flameOuter)"/>
-        <use xlink:href="#flame" transform="translate(72 156) scale(0.84 1.28)" fill="url(#flameOuter)"/>
-        <use xlink:href="#flame" transform="translate(118 150) scale(0.70 1.02)" fill="url(#flameOuter)"/>
-        <use xlink:href="#flameCore" transform="translate(-96 152) scale(0.95 1.25)" fill="url(#flameInner)"/>
-        <use xlink:href="#flameCore" transform="translate(-48 158) scale(1.05 1.45)" fill="url(#flameInner)"/>
-        <use xlink:href="#flameCore" transform="translate(2 160) scale(1.10 1.60)" fill="url(#flameInner)"/>
-        <use xlink:href="#flameCore" transform="translate(50 158) scale(1.05 1.42)" fill="url(#flameInner)"/>
-        <use xlink:href="#flameCore" transform="translate(98 152) scale(0.92 1.20)" fill="url(#flameInner)"/>
-      </g>
+    <!-- Plain yellow folder, box x -122..122, y -80..80. -->
+    <g id="folder">
       <g filter="url(#shadow)">
         <path d="M-110 -62 Q-110 -80 -92 -80 L-38 -80 Q-28 -80 -22 -70 L-14 -58 L92 -58 Q110 -58 110 -40 L110 62 Q110 80 92 80 L-92 80 Q-110 80 -110 62 Z"
               fill="url(#folderBack)"/>
@@ -157,11 +250,11 @@
       </g>
     </g>
 
-    <!-- The emblem: disc, X badge at the upper right, burning folder at the lower left. -->
+    <!-- The emblem: disc, X badge at the upper right, folder at the lower left. -->
     <g id="emblem">
       <g filter="url(#discLight)"><use xlink:href="#disc"/></g>
       <use xlink:href="#xbadge" transform="translate(150 -42)"/>
-      <use xlink:href="#burningFolder" transform="translate(-60 50) scale(0.86)"/>
+      <use xlink:href="#folder" transform="translate(-58 70) scale(0.9)"/>
     </g>
   </defs>
 
