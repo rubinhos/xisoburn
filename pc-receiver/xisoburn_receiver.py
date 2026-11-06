@@ -294,11 +294,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_json(200, {"app": "xisoburn-receiver", "version": VERSION, "out": self.receiver.out,
                                      "single_file": self.receiver.single_file})
             elif route == ("GET", "/status"):
-                self.status(params)
+                self.route_status(params)
             elif route == ("PUT", "/chunk"):
-                self.chunk(params, body)
+                self.route_chunk(params, body)
             elif route == ("POST", "/finish"):
-                self.finish(params, body)
+                self.route_finish(params, body)
             else:
                 raise HttpError(404, "no route %s %s" % (method, path))
         except HttpError as e:
@@ -316,8 +316,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.handle_any("POST")
 
     # ------------------------------------------------------------ routes
+    # (prefixed: a method named finish() would override socketserver's per-connection cleanup)
 
-    def status(self, params):
+    def route_status(self, params):
         name, total = self.disc(params)
         img = self.receiver.image(name, total, create=False)
         if img is None:
@@ -328,7 +329,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json(200, {"exists": True, "image": img.path, "total_sectors": img.total,
                                  "received": img.ranges, "received_sectors": img.received()})
 
-    def chunk(self, params, body):
+    def route_chunk(self, params, body):
         name, total = self.disc(params)
         m = RANGE_RE.match(self.headers.get("Content-Range", ""))
         if not m:
@@ -348,7 +349,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         img.write(first // SECTOR, body)
         self.send_json(200, {"ok": True})
 
-    def finish(self, params, body):
+    def route_finish(self, params, body):
         name, total = self.disc(params)
         complete = params.get("complete", "0") == "1"
         img = self.receiver.image(name, total, create=False)
@@ -376,6 +377,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
 class Server(http.server.ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.errors = []  # unexpected exceptions while handling a connection (checked by the tests)
+
+    def handle_error(self, request, client_address):
+        import traceback
+        self.errors.append(traceback.format_exc())
+        super().handle_error(request, client_address)
 
 
 def make_server(out, port, token, bind="0.0.0.0", console=True):

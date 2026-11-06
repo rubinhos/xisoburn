@@ -28,6 +28,8 @@ class ReceiverTest(unittest.TestCase):
         self.server.receiver.close_all()
         self.server.server_close()
         shutil.rmtree(self.dir, ignore_errors=True)
+        # Any exception inside the server (even after a response was sent) is a bug.
+        self.assertEqual(self.server.errors, [], "".join(self.server.errors))
 
     def request(self, method, path, body=None, headers=None, token=TOKEN):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
