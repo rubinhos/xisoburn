@@ -124,8 +124,13 @@ The `.sha256` holds the hash of the finished image.
 
 ## License
 
-The files in `xbox-app/xISOBurn/Css/` are derived from libdvdcss, so they stay under the GNU General
-Public License, version 2 or later. Distribute xISOBurn under a GPL-compatible license.
+xISOBurn is free software: you can redistribute it and/or modify it under the terms of the
+[GNU General Public License](LICENSE) as published by the Free Software Foundation, either version 2
+of the License, or (at your option) any later version (`GPL-2.0-or-later`). It is distributed in the
+hope that it will be useful, but WITHOUT ANY WARRANTY; see the license for details.
+
+The license follows from the CSS code. The files in `xbox-app/xISOBurn/Css/` are derived from
+libdvdcss (Copyright VideoLAN, GPL-2.0-or-later) and keep its copyright and license notices.
 
 ## Disclaimer
 

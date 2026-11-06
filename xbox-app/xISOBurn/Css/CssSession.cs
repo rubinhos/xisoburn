@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 // CSS session with the drive: the authentication sequence of libdvdcss src/css.c (GetBusKey,
 // dvdcss_disckey, dvdcss_titlekey), Copyright (C) 1999-2008 VideoLAN, GPL-2.0-or-later.
 

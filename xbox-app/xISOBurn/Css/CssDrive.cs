@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 // CSS commands for the drive, as raw MMC CDBs sent through the existing SCSI pass-through.
 // CDB layout and response offsets follow the raw-SCSI branches of libdvdcss src/ioctl.c
 // (Solaris USCSI / Haiku), Copyright (C) 1999-2001 VideoLAN, GPL-2.0-or-later.

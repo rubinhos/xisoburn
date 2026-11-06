@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Generated from libdvdcss src/csstables.h (Copyright (C) 1999-2001 VideoLAN, GPL-2.0-or-later).
 // Based on css-auth by Derek Fawcus, the CSS ioctls example by Andrew T. Veliath, the divide and
 // conquer attack by Frank A. Stevenson, DeCSSPlus and DecVOB. Values copied verbatim; do not edit.
