@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
@@ -36,6 +37,13 @@ namespace xISOBurn
         private long _failedSectors;
         private string _rescueLine = "";
 
+        // Web page served by the app (milestone 3b spike). The HTML fragment is rebuilt on the UI
+        // thread once a second and read by the server threads (strings are immutable: no lock needed).
+        private static readonly int[] WebPorts = { 8770, 8080, 50080 };
+        private WebServer _web;
+        private volatile string _webBody = "";
+        private DispatcherTimer _webTimer;
+
         public MainPage()
         {
             InitializeComponent();
@@ -51,9 +59,58 @@ namespace xISOBurn
                 ? "Start xisoburn-receiver on the PC, then open Settings and enter its address and token."
                 : "Insert the disc and choose \"Detect disc\". Logs: " + _folder;
 
-            Loaded += (s, e) => DetectButton.Focus(FocusState.Programmatic);
+            Loaded += async (s, e) =>
+            {
+                DetectButton.Focus(FocusState.Programmatic);
+                await StartWebAsync();
+            };
             // On Xbox, the B button raises BackRequested. Unhandled, the system may close the app mid-copy.
             SystemNavigationManager.GetForCurrentView().BackRequested += OnBackRequested;
+        }
+
+        private async Task StartWebAsync()
+        {
+            try
+            {
+                _web = new WebServer(_log, () => _webBody);
+                await _web.StartAsync(WebPorts);
+                var addrs = WebServer.LocalAddresses();
+                if (_web.Ports.Count == 0 || addrs.Count == 0)
+                {
+                    SubtitleText.Text = "Web page unavailable (see log)";
+                    if (addrs.Count == 0) _log.Info("Web server: no IPv4 address found on the console's network adapters.");
+                    return;
+                }
+                var urls = new List<string>();
+                foreach (var a in addrs)
+                    foreach (var p in _web.Ports)
+                        urls.Add("http://" + a + ":" + p + "/");
+                SubtitleText.Text = "Open on the PC: " + urls[0];
+                _log.Info("Web page (open in the PC browser): " + string.Join("  ", urls));
+            }
+            catch (Exception ex)
+            {
+                _log.Info("Web server failed to start: " + ex.Message);
+            }
+
+            _webTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _webTimer.Tick += (s, e) => UpdateWebBody();
+            _webTimer.Start();
+            UpdateWebBody();
+        }
+
+        private void UpdateWebBody()
+        {
+            Func<string, string> enc = System.Net.WebUtility.HtmlEncode;
+            var sb = new System.Text.StringBuilder();
+            sb.Append("<h2>Disc</h2><div class=\"box\">").Append(enc(DiscText.Text)).Append("</div>");
+            sb.Append("<h2>Progress</h2><div class=\"box\">").Append(enc(ProgressText.Text)).Append("</div>");
+            sb.Append("<h2>Status</h2><div class=\"box\">").Append(enc(StatusText.Text)).Append("</div>");
+            sb.Append("<h2>Recent log</h2><pre>");
+            int start = Math.Max(0, _lines.Count - 40);
+            for (int i = start; i < _lines.Count; i++) sb.Append(enc(_lines[i].Text)).Append('\n');
+            sb.Append("</pre>");
+            _webBody = sb.ToString();
         }
 
         private void OnBackRequested(object sender, BackRequestedEventArgs e)

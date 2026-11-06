@@ -23,8 +23,8 @@
         <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="20">
             <Image Source="Assets/Banner.png" Height="56" Stretch="Uniform" HorizontalAlignment="Left"
                    AutomationProperties.Name="xISOBurn"/>
-            <TextBlock Text="Copy discs to your PC over the local network"
-                       FontSize="14" Opacity="0.7" VerticalAlignment="Center"/>
+            <TextBlock x:Name="SubtitleText" Text="Copy discs to your PC over the local network"
+                       FontSize="14" Opacity="0.8" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="560"/>
         </StackPanel>
 
         <!-- Controller-only navigation: D-pad between buttons, A activates, B cancels a copy. -->

@@ -4,6 +4,21 @@ The Xbox app reads the disc with the same multi-pass rescue as milestone 2. Inst
 LocalState, it sends every block to **xisoburn-receiver** on your PC, which writes the ISO. This
 avoids both the Xbox's internal storage and the ~2 GB file limit on USB storage in Developer Mode.
 
+## Next: download through the browser (spike in progress)
+
+Goal: make the Xbox app the only thing needed. The app copies the disc to the Xbox (LocalState,
+with every pass and retry), and a page served **by the app** lets the PC browser download the ISO,
+resumable if the network drops. If this works, the PC receiver will be retired.
+
+The spike build starts a small web server with the app on ports **8770, 8080 and 50080**. The
+address appears at the top of the screen ("Open on the PC: http://...") and in the log. To test:
+1. Open that address in the PC browser. The page shows the disc, the progress and the recent log,
+   refreshing every 3 s.
+2. Click **Download 64 MiB of test data**. The browser shows the speed, and the app logs
+   "test download ... MiB/s".
+3. If a port doesn't open, try the others. The log says whether any connection reached the app
+   ("Web: ... opened the page").
+
 ## Quick start
 
 1. **PC:** download the `xisoburn-receiver-N` artifact (see [install.md](install.md)) and open
