@@ -4,8 +4,9 @@ namespace xISOBurn.Scsi
 {
     /// <summary>
     /// CDB (Command Descriptor Block) builders. All multi-byte fields are big-endian.
-    /// References: SPC-4 (INQUIRY, TEST UNIT READY, REQUEST SENSE), SBC/MMC-6 (READ CAPACITY,
-    /// READ(10), GET CONFIGURATION, READ DVD STRUCTURE, REPORT KEY, READ TOC).
+    /// References: SPC-4 (TEST UNIT READY, REQUEST SENSE, MODE SENSE/SELECT), SBC/MMC-6 (READ CAPACITY,
+    /// READ(10), GET CONFIGURATION, READ DVD STRUCTURE, SET CD SPEED). The CSS commands (REPORT KEY,
+    /// SEND KEY, READ DVD STRUCTURE disc key) are in Css/CssDrive.cs.
     /// </summary>
     internal static class ScsiCommands
     {
@@ -21,16 +22,10 @@ namespace xISOBurn.Scsi
             return new byte[] { 0x03, 0, 0, 0, allocationLength, 0 };
         }
 
-        /// <summary>INQUIRY (0x12): drive vendor, model and firmware.</summary>
-        public static byte[] Inquiry(byte allocationLength)
-        {
-            return new byte[] { 0x12, 0, 0, 0, allocationLength, 0 };
-        }
-
         /// <summary>
         /// READ CAPACITY(10) (0x25): returns the LAST LBA (not the count) and the block size.
         /// Sectors = last LBA + 1. Warning: on the Xbox drive (PLDS DG-6M5S) this was WRONG for an OTP
-        /// dual-layer DVD ("end - start + 1" of the physical sector numbers); see docs/spike.md.
+        /// dual-layer DVD ("end - start + 1" of the physical sector numbers); see docs/how-it-works.md.
         /// </summary>
         public static byte[] ReadCapacity10()
         {
@@ -66,7 +61,7 @@ namespace xISOBurn.Scsi
         /// READ DVD STRUCTURE (0xAD), media type 0 (DVD).
         ///   format 0x00 = Physical Format Information (book type, layers, sectors);
         ///   format 0x01 = Copyright Information (protection system and disc regions).
-        /// Format 0x02 (Disc Key) requires CSS authentication and is NOT used.
+        /// Format 0x02 (Disc Key) needs CSS authentication; see Css/CssDrive.cs.
         /// </summary>
         public static byte[] ReadDvdStructure(byte layer, byte format, int allocationLength)
         {
@@ -75,19 +70,6 @@ namespace xISOBurn.Scsi
             cdb[6] = layer;
             cdb[7] = format;
             Bytes.PutBE16(cdb, 8, allocationLength);
-            return cdb;
-        }
-
-        /// <summary>
-        /// REPORT KEY (0xA4) with KEY FORMAT 0x08 = "RPC State": only reports the region set in the
-        /// drive and how many changes remain. Takes no part in CSS authentication and changes nothing.
-        /// </summary>
-        public static byte[] ReportKeyRpcState()
-        {
-            var cdb = new byte[12];
-            cdb[0] = 0xA4;
-            Bytes.PutBE16(cdb, 8, 8); // allocation length
-            cdb[10] = 0x08;            // AGID 0 (bits 7-6) | KEY FORMAT 0x08
             return cdb;
         }
 
@@ -127,15 +109,6 @@ namespace xISOBurn.Scsi
             cdb[0] = 0x55;
             cdb[1] = 0x10;              // PF
             Bytes.PutBE16(cdb, 7, parameterListLength);
-            return cdb;
-        }
-
-        /// <summary>READ TOC/PMA/ATIP (0x43), format 0 (TOC), LBA addresses. CDs only.</summary>
-        public static byte[] ReadToc(int allocationLength)
-        {
-            var cdb = new byte[10];
-            cdb[0] = 0x43;
-            Bytes.PutBE16(cdb, 7, allocationLength);
             return cdb;
         }
     }

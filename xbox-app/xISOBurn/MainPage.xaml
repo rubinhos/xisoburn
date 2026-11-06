@@ -29,7 +29,7 @@
 
         <!-- Controller-only navigation: D-pad between buttons, A activates, B cancels a copy. -->
         <!--
-          7 buttons do not fit in the ~880 effective pixels left inside the TV safe area: the row scrolls
+          The buttons do not always fit in the ~880 effective pixels left inside the TV safe area: the row scrolls
           horizontally, and moving focus with the D-pad brings the focused button into view.
         -->
         <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Hidden" HorizontalScrollMode="Enabled"
@@ -41,8 +41,6 @@
             <!-- Enabled only when a previous rescue of the inserted disc left failed sectors. -->
             <Button x:Name="RetryButton" Content="Retry failed" Click="RetryButton_Click" FontSize="14" Padding="10,4" IsEnabled="False"/>
             <Button x:Name="ScanButton" Content="Scan disc" Click="ScanButton_Click" FontSize="14" Padding="10,4"/>
-            <!-- Proof of concept: CSS authentication + descrambling (libdvdcss port), see docs/css-poc.md. -->
-            <Button x:Name="CssTestButton" Content="CSS test" Click="CssTestButton_Click" FontSize="14" Padding="10,4"/>
             <Button x:Name="SettingsButton" Content="Settings" Click="SettingsButton_Click" FontSize="14" Padding="10,4"/>
         </StackPanel>
         </ScrollViewer>
@@ -111,6 +109,7 @@
                     <TextBlock Text="Copy" FontWeight="SemiBold" FontSize="15" Margin="0,8,0,0"/>
                     <TextBox x:Name="OutputNameBox" Header="File name (empty = the disc's volume label)"/>
                     <CheckBox x:Name="WriteImageBox" Content="Write the image (off = only test the drive and build the map)"/>
+                    <CheckBox x:Name="DecryptCssBox" Content="Decrypt CSS-protected DVD-Video while copying (off = copy it scrambled)"/>
 
                     <TextBlock Text="Reading" FontWeight="SemiBold" FontSize="15" Margin="0,8,0,0"/>
                     <ComboBox x:Name="SectorsPerReadBox" Header="Sectors per read" HorizontalAlignment="Stretch">

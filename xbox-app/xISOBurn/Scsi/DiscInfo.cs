@@ -33,9 +33,7 @@ namespace xISOBurn.Scsi
             }
         }
 
-        public static bool IsCd(int p) { return p >= 0x0008 && p <= 0x000A; }
         public static bool IsDvd(int p) { return p >= 0x0010 && p <= 0x002B; }
-        public static bool IsBd(int p) { return p >= 0x0040 && p <= 0x0043; }
     }
 
     /// <summary>

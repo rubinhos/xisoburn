@@ -9,7 +9,7 @@ namespace xISOBurn.Core
     /// <summary>
     /// Detects the disc and decides how many sectors to copy.
     ///
-    /// Size decision (spike finding, docs/spike.md): on an OTP dual-layer DVD, the Xbox drive's READ
+    /// Size decision (found on the console, docs/how-it-works.md): on an OTP dual-layer DVD, the Xbox drive's READ
     /// CAPACITY returned "physical end sector - start + 1" (15,939,015 instead of 3,317,799).
     /// So for DVDs the primary source is READ DVD STRUCTURE (OTP calculation), cross-checked against
     /// the ISO9660 volume size. READ CAPACITY is only used for CD/BD or if the structure fails.

@@ -19,12 +19,6 @@ namespace xISOBurn.Scsi
         /// <summary>02/3A/xx: no disc in the drive. Not a bad sector; the copy has to stop.</summary>
         public bool IsNoMedium { get { return Key == 0x02 && Asc == 0x3A; } }
 
-        /// <summary>05/21/00: LBA past the end of the disc.</summary>
-        public bool IsOutOfRange { get { return Key == 0x05 && Asc == 0x21; } }
-
-        /// <summary>Medium error (key 3): a genuinely bad sector.</summary>
-        public bool IsMediumError { get { return Key == 0x03; } }
-
         /// <summary>05/6F/xx: CSS authentication / region problems (not a physical defect of the disc).</summary>
         public bool IsCopyProtection { get { return Key == 0x05 && Asc == 0x6F; } }
 
