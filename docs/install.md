@@ -17,10 +17,6 @@ Portal (a web page served by the console) installs it.
    You can ignore everything else: the `arm64`/`x86` dependencies, the PC install scripts and the
    telemetry files.
 
-The same run also produces the **`xisoburn-receiver-N`** artifact, the PC receiver
-(`xisoburn-receiver.exe`). Unzip it anywhere on the PC; it needs no installation. How to run it:
-[pc-receiver/README.md](../pc-receiver/README.md).
-
 The package is signed with a self-signed certificate (`CN=xISOBurn`). The public part is in
 `xISOBurn.cer`, but you shouldn't need it on the Xbox.
 

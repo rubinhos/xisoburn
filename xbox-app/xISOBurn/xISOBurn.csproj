@@ -70,7 +70,6 @@
     <Compile Include="Core\DiscProbe.cs" />
     <Compile Include="Core\DiscScan.cs" />
     <Compile Include="Core\IsoFiles.cs" />
-    <Compile Include="Core\ReceiverClient.cs" />
     <Compile Include="Core\WebServer.cs" />
     <Compile Include="Core\RescueJob.cs" />
     <Compile Include="Core\SectorStateMap.cs" />

@@ -32,7 +32,7 @@ namespace xISOBurn.Core
         public long TotalSectors { get; private set; }
         public string Volume { get; private set; }
         public int RetryPassesDone;
-        /// <summary>Where the data of the Ok sectors lives: "local" (LocalState image) or "pc" (receiver).</summary>
+        /// <summary>Where the data of the Ok sectors lives: "local" (LocalState image); "pc" in maps from the old PC receiver.</summary>
         public string Destination = "";
 
         public SectorStateMap(long totalSectors, string volume)
@@ -95,29 +95,6 @@ namespace xISOBurn.Core
             long n = 0;
             for (long i = from; i < end; i++) if (_state[i] == b) n++;
             return n;
-        }
-
-        /// <summary>
-        /// Marks as Untried every Ok sector that is not inside the given sorted [start, end) ranges
-        /// (what the PC receiver reports it has). Keeps the map honest if the ISO on the PC was deleted,
-        /// moved, or never got some chunks. Returns how many sectors were demoted.
-        /// </summary>
-        public long DemoteOkNotIn(List<long[]> ranges)
-        {
-            long demoted = 0;
-            int r = 0;
-            for (long i = 0; i < TotalSectors; i++)
-            {
-                if (_state[i] != (byte)SectorState.Ok) continue;
-                while (r < ranges.Count && ranges[r][1] <= i) r++;
-                bool inside = r < ranges.Count && ranges[r][0] <= i && i < ranges[r][1];
-                if (!inside)
-                {
-                    Set(i, 1, SectorState.Untried, null);
-                    demoted++;
-                }
-            }
-            return demoted;
         }
 
         public string Summary()

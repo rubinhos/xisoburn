@@ -30,7 +30,7 @@
         <!-- Controller-only navigation: D-pad between buttons, A activates, B cancels a copy. -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
             <Button x:Name="DetectButton" Content="Detect disc" Click="DetectButton_Click" FontSize="15" Padding="12,5"/>
-            <Button x:Name="CopyButton" Content="Rescue / resume" Click="CopyButton_Click" FontSize="15" Padding="12,5"/>
+            <Button x:Name="CopyButton" Content="Copy / resume" Click="CopyButton_Click" FontSize="15" Padding="12,5"/>
             <Button x:Name="CancelButton" Content="Cancel (B)" Click="CancelButton_Click" FontSize="15" Padding="12,5" IsEnabled="False"/>
             <!-- Enabled only when a previous rescue of the inserted disc left failed sectors. -->
             <Button x:Name="RetryButton" Content="Retry failed" Click="RetryButton_Click" FontSize="15" Padding="12,5" IsEnabled="False"/>
@@ -83,27 +83,23 @@
         <!--
           Settings: every key of config.json. Works with the controller: D-pad moves between fields,
           A opens the on-screen keyboard on a text box, B closes the dialog without saving.
-          Nothing needs an app restart: config.json is read again at the start of every run.
+          Everything applies from the next run, except the web page port, which needs an app restart
+          (the app says so when it changes).
         -->
         <ContentDialog x:Name="SettingsDialog" Title="Settings" PrimaryButtonText="Save" CloseButtonText="Cancel"
                        DefaultButton="Primary" PrimaryButtonClick="SettingsDialog_PrimaryButtonClick">
             <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="380" Padding="0,0,12,0">
                 <StackPanel Spacing="6">
-                    <TextBlock Text="Destination" FontWeight="SemiBold" FontSize="15"/>
-                    <ComboBox x:Name="DestinationBox" Header="Where the image goes" HorizontalAlignment="Stretch">
-                        <ComboBoxItem Content="PC receiver (network)" Tag="pc"/>
-                        <ComboBoxItem Content="LocalState on the Xbox" Tag="local"/>
-                    </ComboBox>
-                    <TextBox x:Name="HostBox" Header="PC address (IP shown by xisoburn-receiver)" PlaceholderText="192.168.0.10"
-                             InputScope="Url"/>
+                    <TextBlock Text="Web page (download on the PC)" FontWeight="SemiBold" FontSize="15"/>
+                    <TextBox x:Name="WebPortBox" Header="Port (1024-65535; changing it needs an app restart)" Width="200"
+                             HorizontalAlignment="Left" InputScope="Number"/>
+                    <CheckBox x:Name="PinRequiredBox" Content="Ask for the PIN on the web page"/>
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBox x:Name="PortBox" Header="Port" Width="90" InputScope="Number"/>
-                        <TextBox x:Name="TokenBox" Header="Token" Width="170" PlaceholderText="printed by the receiver"/>
+                        <TextBox x:Name="PinBox" Header="PIN (4 to 8 digits)" Width="140" InputScope="Number"/>
+                        <Button x:Name="NewPinButton" Content="New PIN" Click="NewPinButton_Click" VerticalAlignment="Bottom"/>
                     </StackPanel>
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button x:Name="TestButton" Content="Test connection" Click="TestButton_Click"/>
-                        <TextBlock x:Name="TestText" VerticalAlignment="Center" FontSize="12" TextWrapping="Wrap" MaxWidth="300"/>
-                    </StackPanel>
+
+                    <TextBlock Text="Copy" FontWeight="SemiBold" FontSize="15" Margin="0,8,0,0"/>
                     <TextBox x:Name="OutputNameBox" Header="File name (empty = the disc's volume label)"/>
                     <CheckBox x:Name="WriteImageBox" Content="Write the image (off = only test the drive and build the map)"/>
 
@@ -138,7 +134,8 @@
                     </StackPanel>
 
                     <TextBlock x:Name="SettingsError" Foreground="#FF6B6B" FontSize="12" TextWrapping="Wrap"/>
-                    <TextBlock Text="Changes apply from the next run; no restart needed." FontSize="12" Opacity="0.7" TextWrapping="Wrap"/>
+                    <TextBlock Text="Changes apply from the next run. Only a new web page port needs an app restart."
+                               FontSize="12" Opacity="0.7" TextWrapping="Wrap"/>
                 </StackPanel>
             </ScrollViewer>
         </ContentDialog>

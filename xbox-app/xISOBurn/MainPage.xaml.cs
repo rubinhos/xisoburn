@@ -37,12 +37,16 @@ namespace xISOBurn
         private long _failedSectors;
         private string _rescueLine = "";
 
-        // Web page served by the app (milestone 3b spike). The HTML fragment is rebuilt on the UI
-        // thread once a second and read by the server threads (strings are immutable: no lock needed).
-        private static readonly int[] WebPorts = { 8770, 8080, 50080 };
+        // Web page served by the app: the PC browser downloads the copies from it. The status fragment is
+        // rebuilt on the UI thread once a second and read by the server threads (immutable strings, no
+        // lock needed); _webCfg is replaced, never modified, when the settings are saved.
         private WebServer _web;
         private volatile string _webBody = "";
+        private volatile CopyConfig _webCfg;
         private DispatcherTimer _webTimer;
+        private string _freeSpace = "";
+        private DateTime _freeSpaceAt = DateTime.MinValue;
+        private string _webUrl = "";
 
         public MainPage()
         {
@@ -53,11 +57,10 @@ namespace xISOBurn
 
             string msg;
             var cfg = CopyConfig.Load(_folder, out msg);
+            _webCfg = cfg;
             _log.Info(msg);
             ConfigText.Text = cfg.Describe();
-            StatusText.Text = cfg.SendToPc && cfg.ReceiverHost.Length == 0
-                ? "Start xisoburn-receiver on the PC, then open Settings and enter its address and token."
-                : "Insert the disc and choose \"Detect disc\". Logs: " + _folder;
+            StatusText.Text = "Insert a disc and choose \"Detect disc\", then \"Copy / resume\". Download the copy from the web page shown above.";
 
             Loaded += async (s, e) =>
             {
@@ -70,23 +73,24 @@ namespace xISOBurn
 
         private async Task StartWebAsync()
         {
+            var cfg = _webCfg;
             try
             {
-                _web = new WebServer(_log, () => _webBody);
-                await _web.StartAsync(WebPorts);
+                _web = new WebServer(_log, _folder, () => _webBody, () => _webCfg);
+                bool ok = await _web.StartAsync(cfg.WebPort);
                 var addrs = WebServer.LocalAddresses();
-                if (_web.Ports.Count == 0 || addrs.Count == 0)
+                if (!ok || addrs.Count == 0)
                 {
-                    SubtitleText.Text = "Web page unavailable (see log)";
+                    SubtitleText.Text = !ok ? "Web page unavailable on port " + cfg.WebPort + " - choose another port in Settings"
+                                            : "No network connection - the web page needs the local network";
                     if (addrs.Count == 0) _log.Info("Web server: no IPv4 address found on the console's network adapters.");
-                    return;
                 }
-                var urls = new List<string>();
-                foreach (var a in addrs)
-                    foreach (var p in _web.Ports)
-                        urls.Add("http://" + a + ":" + p + "/");
-                SubtitleText.Text = "Open on the PC: " + urls[0];
-                _log.Info("Web page (open in the PC browser): " + string.Join("  ", urls));
+                else
+                {
+                    _webUrl = "http://" + addrs[0] + (cfg.WebPort == 80 ? "" : ":" + cfg.WebPort) + "/";
+                    ShowWebAddress();
+                    _log.Info("Web page (open in the PC browser): " + _webUrl + (addrs.Count > 1 ? "  (other addresses: " + string.Join(", ", addrs.GetRange(1, addrs.Count - 1)) + ")" : ""));
+                }
             }
             catch (Exception ex)
             {
@@ -94,22 +98,48 @@ namespace xISOBurn
             }
 
             _webTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            _webTimer.Tick += (s, e) => UpdateWebBody();
+            _webTimer.Tick += async (s, e) => { UpdateWebBody(); await RefreshFreeSpaceAsync(); };
             _webTimer.Start();
             UpdateWebBody();
+        }
+
+        private void ShowWebAddress()
+        {
+            if (_webUrl.Length == 0) return;
+            var cfg = _webCfg;
+            SubtitleText.Text = "On the PC, open " + _webUrl + (cfg.WebPinRequired ? "   PIN " + cfg.WebPin : "");
+        }
+
+        private async Task RefreshFreeSpaceAsync()
+        {
+            if (DateTime.UtcNow - _freeSpaceAt < TimeSpan.FromSeconds(15)) return;
+            _freeSpaceAt = DateTime.UtcNow;
+            try
+            {
+                var props = await ApplicationData.Current.LocalFolder.Properties.RetrievePropertiesAsync(new[] { "System.FreeSpace" });
+                object v;
+                if (props.TryGetValue("System.FreeSpace", out v) && v is ulong)
+                    _freeSpace = ((ulong)v / 1073741824.0).ToString("0.0") + " GiB free on the Xbox";
+            }
+            catch (Exception)
+            {
+                _freeSpace = "";
+            }
         }
 
         private void UpdateWebBody()
         {
             Func<string, string> enc = System.Net.WebUtility.HtmlEncode;
             var sb = new System.Text.StringBuilder();
-            sb.Append("<h2>Disc</h2><div class=\"box\">").Append(enc(DiscText.Text)).Append("</div>");
-            sb.Append("<h2>Progress</h2><div class=\"box\">").Append(enc(ProgressText.Text)).Append("</div>");
-            sb.Append("<h2>Status</h2><div class=\"box\">").Append(enc(StatusText.Text)).Append("</div>");
-            sb.Append("<h2>Recent log</h2><pre>");
-            int start = Math.Max(0, _lines.Count - 40);
+            sb.Append("<h2>Now on the Xbox</h2>");
+            sb.Append("<div class=\"box\"><b>Disc</b>\n").Append(enc(DiscText.Text)).Append("</div>");
+            sb.Append("<div class=\"box\"><b>Progress</b>\n").Append(enc(ProgressText.Text)).Append("</div>");
+            sb.Append("<div class=\"box\">").Append(enc(StatusText.Text)).Append("</div>");
+            if (_freeSpace.Length > 0) sb.Append("<div class=\"dim\">").Append(enc(_freeSpace)).Append("</div>");
+            sb.Append("<details><summary>Recent log</summary><pre>");
+            int start = Math.Max(0, _lines.Count - 60);
             for (int i = start; i < _lines.Count; i++) sb.Append(enc(_lines[i].Text)).Append('\n');
-            sb.Append("</pre>");
+            sb.Append("</pre></details>");
             _webBody = sb.ToString();
         }
 
@@ -242,7 +272,7 @@ namespace xISOBurn
             try
             {
                 bool ok = await DetectAsync(20);
-                StatusText.Text = ok ? "Disc detected. Choose \"Rescue / resume\"." : "No disc detected (see log).";
+                StatusText.Text = ok ? "Disc detected. Choose \"Copy / resume\"." : "No disc detected (see log).";
             }
             catch (Exception ex)
             {
@@ -280,11 +310,6 @@ namespace xISOBurn
                 var cfg = CopyConfig.Load(_folder, out msg);
                 _log.Info(msg);
                 ConfigText.Text = cfg.Describe();
-                if (cfg.WriteImage && cfg.SendToPc && cfg.ReceiverHost.Length == 0)
-                {
-                    StatusText.Text = "Open Settings and enter the PC address (or choose LocalState as the destination).";
-                    return;
-                }
 
                 // Detect again: the disc may have been swapped since the last detection.
                 if (!await DetectAsync((uint)cfg.TimeoutSeconds))
@@ -298,7 +323,8 @@ namespace xISOBurn
                 displayActive = true;
                 _cts = new CancellationTokenSource();
                 SetBusy(true, true);
-                StatusText.Text = "Rescuing... do not leave the app. B pauses (progress is kept; run again to resume).";
+                StatusText.Text = "Copying to the Xbox... do not leave the app. B pauses (progress is kept). " +
+                                  "The download can already start on the web page.";
                 Bar.Value = 0;
 
                 var progress = new Progress<RescueProgress>(UpdateProgress);
@@ -317,9 +343,10 @@ namespace xISOBurn
                                       " still failed." + (result.Sha256 != null ? " SHA-256 " + result.Sha256 : "");
                 else if (result.Finished)
                     StatusText.Text = "Finished: " + counts + "." + (result.Sha256 != null ? " SHA-256 " + result.Sha256 : "") +
+                                      (_webUrl.Length > 0 ? " Download it from " + _webUrl : "") +
                                       (result.Bad > 0 ? " \"Retry failed\" tries the bad sectors once more." : "");
                 else if (result.Cancelled)
-                    StatusText.Text = "Paused: " + counts + ". Choose \"Rescue / resume\" to continue.";
+                    StatusText.Text = "Paused: " + counts + ". Choose \"Copy / resume\" to continue.";
                 else if (result.Error != null)
                     StatusText.Text = "Stopped: " + result.Error + " (" + counts + ")";
                 else
@@ -399,15 +426,16 @@ namespace xISOBurn
 
         // ------------------------------------------------------------ settings
 
+        private bool _restartNeeded;
+
         private async void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
             if (_busy) return;
             string msg;
             var cfg = CopyConfig.Load(_folder, out msg);
-            SelectByTag(DestinationBox, cfg.Destination);
-            HostBox.Text = cfg.ReceiverHost;
-            PortBox.Text = cfg.ReceiverPort.ToString();
-            TokenBox.Text = cfg.ReceiverToken;
+            WebPortBox.Text = cfg.WebPort.ToString();
+            PinRequiredBox.IsChecked = cfg.WebPinRequired;
+            PinBox.Text = cfg.WebPin;
             OutputNameBox.Text = cfg.OutputName;
             WriteImageBox.IsChecked = cfg.WriteImage;
             SelectByTag(SectorsPerReadBox, cfg.SectorsPerRead.ToString());
@@ -419,9 +447,28 @@ namespace xISOBurn
             StartBox.Text = cfg.StartSector.ToString();
             LimitBox.Text = cfg.SectorLimit.ToString();
             SettingsError.Text = "";
-            TestText.Text = "";
+            _restartNeeded = false;
             await SettingsDialog.ShowAsync();
+
+            if (_restartNeeded)
+            {
+                // The only setting that cannot change while the app runs: the web server is already
+                // listening on the old port.
+                var notice = new ContentDialog
+                {
+                    Title = "Restart needed",
+                    Content = "The web page will use port " + _webCfg.WebPort + " after the app is closed and opened again.\n" +
+                              "Until then it stays at " + (_web != null && _web.Port > 0 ? _web.Port.ToString() : "the old port") + ".",
+                    CloseButtonText = "OK",
+                };
+                await notice.ShowAsync();
+            }
             SettingsButton.Focus(FocusState.Programmatic);
+        }
+
+        private void NewPinButton_Click(object sender, RoutedEventArgs e)
+        {
+            PinBox.Text = CopyConfig.NewPin();
         }
 
         private void SettingsDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
@@ -437,9 +484,13 @@ namespace xISOBurn
             cfg.Save(_folder);
             string msg;
             cfg = CopyConfig.Load(_folder, out msg); // normalises the values exactly as a run will see them
+            _webCfg = cfg;                            // PIN changes apply to the web page at once
+            ShowWebAddress();
             ConfigText.Text = cfg.Describe();
             _log.Info("Settings saved: " + cfg.Describe());
-            StatusText.Text = "Settings saved. They apply from the next run; no restart needed.";
+            _restartNeeded = _web != null && _web.Port > 0 && cfg.WebPort != _web.Port;
+            StatusText.Text = _restartNeeded ? "Settings saved. Restart the app to use the new web page port."
+                                             : "Settings saved. They apply from the next run.";
         }
 
         /// <summary>Builds a config from the dialog; null (with a message) if a field is invalid.</summary>
@@ -448,28 +499,30 @@ namespace xISOBurn
             error = null;
             string msg;
             var cfg = CopyConfig.Load(_folder, out msg);
-            cfg.Destination = TagOf(DestinationBox, "pc");
-            cfg.ReceiverHost = HostBox.Text.Trim();
-            cfg.ReceiverToken = TokenBox.Text.Trim();
+            cfg.WebPinRequired = PinRequiredBox.IsChecked == true;
             cfg.OutputName = OutputNameBox.Text.Trim();
             cfg.WriteImage = WriteImageBox.IsChecked == true;
             cfg.SkipOnErrors = SkipBox.IsChecked == true;
             cfg.SectorsPerRead = int.Parse(TagOf(SectorsPerReadBox, "32"));
             cfg.RetryReadSpeedKBps = int.Parse(TagOf(RetrySpeedBox, "1385"));
             cfg.DriveReadRetryCount = int.Parse(TagOf(DriveRetryBox, "-1"));
+            string pin = PinBox.Text.Trim();
 
             int port, timeout, passes;
             long start, limit;
-            if (!int.TryParse(PortBox.Text.Trim(), out port) || port < 1 || port > 65535) error = "Port must be a number from 1 to 65535.";
+            bool pinDigits = pin.Length >= 4 && pin.Length <= 8;
+            foreach (char ch in pin) if (ch < '0' || ch > '9') pinDigits = false;
+            if (!int.TryParse(WebPortBox.Text.Trim(), out port) || port < 1024 || port > 65535) error = "The web page port must be a number from 1024 to 65535.";
+            else if (!pinDigits) error = "The PIN must have 4 to 8 digits.";
             else if (!int.TryParse(TimeoutBox.Text.Trim(), out timeout) || timeout < 5 || timeout > 120) error = "Timeout must be 5 to 120 seconds.";
             else if (!int.TryParse(RetryPassesBox.Text.Trim(), out passes) || passes < 0 || passes > 100) error = "Retry passes must be 0 to 100.";
             else if (!long.TryParse(StartBox.Text.Trim(), out start) || start < 0) error = "First sector must be 0 or more.";
             else if (!long.TryParse(LimitBox.Text.Trim(), out limit) || limit < 0) error = "Sectors must be 0 (whole disc) or more.";
-            else if (cfg.SendToPc && cfg.ReceiverHost.Length == 0) error = "Enter the PC address, or choose LocalState as the destination.";
             else if (cfg.OutputName.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0) error = "The file name contains characters that are not allowed.";
             else
             {
-                cfg.ReceiverPort = port;
+                cfg.WebPort = port;
+                cfg.WebPin = pin;
                 cfg.TimeoutSeconds = timeout;
                 cfg.RetryPasses = passes;
                 cfg.StartSector = start;
@@ -478,40 +531,6 @@ namespace xISOBurn
             }
             return null;
         }
-
-        private async void TestButton_Click(object sender, RoutedEventArgs e)
-        {
-            int port;
-            string host = HostBox.Text.Trim();
-            if (host.Length == 0 || !int.TryParse(PortBox.Text.Trim(), out port))
-            {
-                TestText.Text = "Enter the PC address and port first.";
-                return;
-            }
-            TestButton.IsEnabled = false;
-            TestText.Text = "Connecting...";
-            try
-            {
-                using (var client = new ReceiverClient(host, port, TokenBox.Text.Trim()))
-                {
-                    var o = await client.HelloAsync();
-                    TestText.Text = "OK: the receiver saves to " + o.GetNamedString("out", "?");
-                }
-            }
-            catch (ReceiverException ex) when (ex.Status == 401)
-            {
-                TestText.Text = "Connected, but the token is wrong.";
-            }
-            catch (Exception ex)
-            {
-                TestText.Text = "Failed: " + ex.Message + " (is the receiver running, and the firewall open?)";
-            }
-            finally
-            {
-                TestButton.IsEnabled = true;
-            }
-        }
-
         private static void SelectByTag(ComboBox box, string tag)
         {
             box.SelectedIndex = 0;

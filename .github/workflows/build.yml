@@ -1,6 +1,6 @@
 # Builds the Xbox app (UWP x64) as a signed .msix package, ready to install through the Xbox Device
-# Portal, and the PC receiver as a single .exe. Nothing needs to be installed on your PC: everything
-# runs on the GitHub runner, which already ships Visual Studio 2022 (UWP workload) and the Windows SDK.
+# Portal. Nothing needs to be installed on your PC: everything runs on the GitHub runner, which already
+# ships Visual Studio 2022 (UWP workload) and the Windows SDK.
 #
 # Signing:
 #   - If the SIGNING_PFX_BASE64 and SIGNING_PFX_PASSWORD secrets exist, that certificate is used
@@ -120,37 +120,3 @@ jobs:
           path: out/
           if-no-files-found: error
 
-  # PC receiver: run its tests, then package it as a single .exe (PyInstaller) so nothing has to be
-  # installed on the PC. The script itself only uses the Python standard library.
-  pc-receiver:
-    name: PC receiver (Windows .exe)
-    runs-on: windows-2025
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-
-      - name: Tests
-        shell: pwsh
-        working-directory: pc-receiver
-        run: python -m unittest -v test_receiver
-
-      - name: Build xisoburn-receiver.exe
-        shell: pwsh
-        run: |
-          python -m pip install --disable-pip-version-check pyinstaller
-          # --windowed: the .exe opens the receiver window (Tkinter) without a console window.
-          pyinstaller --onefile --windowed --name xisoburn-receiver --paths pc-receiver --hidden-import receiver_gui `
-            --distpath out --workpath build pc-receiver/xisoburn_receiver.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path out/xisoburn-receiver.exe)) { throw "xisoburn-receiver.exe was not built" }
-          # The scripts too, for running with Python (python xisoburn_receiver.py [--nogui --out ...]).
-          Copy-Item pc-receiver/xisoburn_receiver.py, pc-receiver/receiver_gui.py, pc-receiver/README.md out/
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: xisoburn-receiver-${{ github.run_number }}
-          path: out/
-          if-no-files-found: error
