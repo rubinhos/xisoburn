@@ -156,7 +156,7 @@ namespace xISOBurn
             sb.Append("<div class=\"box\"><b>Progress</b>\n").Append(enc(ProgressText.Text)).Append("</div>");
             sb.Append("<div class=\"box\">").Append(enc(StatusText.Text)).Append("</div>");
             if (_freeSpace.Length > 0) sb.Append("<div class=\"dim\">").Append(enc(_freeSpace)).Append("</div>");
-            sb.Append("<details><summary>Recent log</summary><pre>");
+            sb.Append("<details id=\"recentlog\"><summary>Recent log</summary><pre>");
             int start = Math.Max(0, _lines.Count - 60);
             for (int i = start; i < _lines.Count; i++) sb.Append(enc(_lines[i].Text)).Append('\n');
             sb.Append("</pre></details>");

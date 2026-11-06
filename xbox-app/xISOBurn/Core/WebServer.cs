@@ -423,7 +423,7 @@ namespace xISOBurn.Core
             logs.Reverse();
             if (logs.Count > 0)
             {
-                sb.Append("<details><summary>Log files (").Append(logs.Count).Append(")</summary><ul>");
+                sb.Append("<details id=\"logfiles\"><summary>Log files (").Append(logs.Count).Append(")</summary><ul>");
                 for (int i = 0; i < logs.Count && i < 30; i++)
                 {
                     string n = Path.GetFileName(logs[i]);
@@ -514,6 +514,22 @@ namespace xISOBurn.Core
                          "autocomplete=\"off\" autofocus size=\"8\"> <button>Enter</button></form>", false);
         }
 
+        // The page reloads every 5 s. Across reloads it keeps which <details> are open and the scroll
+        // position (sessionStorage), and it skips a reload while text is selected, so the log can be read
+        // and copied.
+        private const string RefreshScript =
+            "<script>(function(){" +
+            "var S=window.sessionStorage;" +
+            "document.querySelectorAll('details[id]').forEach(function(d){" +
+            "if(S.getItem('open_'+d.id)==='1')d.open=true;" +
+            "d.addEventListener('toggle',function(){S.setItem('open_'+d.id,d.open?'1':'0')});});" +
+            "var y=S.getItem('scrollY');if(y!==null)window.scrollTo(0,parseInt(y,10));" +
+            "function tick(){" +
+            "var sel=window.getSelection?String(window.getSelection()):'';" +
+            "if(sel.length>0){setTimeout(tick,5000);return;}" +
+            "S.setItem('scrollY',String(window.scrollY));location.reload();}" +
+            "setTimeout(tick,5000);})();</script>";
+
         private static string Shell(string body, bool autoRefresh)
         {
             // Refresh with JavaScript, not <meta refresh>: timers pause while the delete confirmation is open.
@@ -529,7 +545,7 @@ namespace xISOBurn.Core
                    "input{padding:6px;font-size:16px}details{margin-top:18px}" +
                    "</style></head><body><h1>xISOBurn</h1><div class=\"dim\">Served by the Xbox" +
                    (autoRefresh ? " &middot; updates every 5 s" : "") + "</div>" + body +
-                   (autoRefresh ? "<script>setTimeout(function(){location.reload()},5000)</script>" : "") +
+                   (autoRefresh ? RefreshScript : "") +
                    "</body></html>";
         }
 
