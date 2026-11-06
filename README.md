@@ -21,24 +21,97 @@ You only install the Xbox app; the PC needs nothing.
 - **Gamepad or browser:** every action and setting is on the Xbox screen and also on the web page,
   so the copy can be started, paused and set up from the PC.
 
-## Quick start
+## How to use
 
-1. **Get it:** download the latest version from the repository's **Releases** page (each build of
-   `master` is published there), or build it on GitHub Actions.
-2. **Install:** put the console in Developer Mode, turn on the Device Portal, and install the `.msix`
-   with its dependencies from the PC browser. Step by step: [docs/install.md](docs/install.md).
-3. **Copy:** open xISOBurn and insert the disc. Choose **Detect disc**, then **Copy / resume**. **B**
-   pauses, and **Copy / resume** continues later, even after the app was closed.
-4. **Download:** on the PC, open the address shown at the top of the Xbox screen
-   (`http://192.168.x.x:8770/`), type the PIN, and click **ISO**. Compare the SHA-256 on the page with
-   `Get-FileHash .\NAME.iso -Algorithm SHA256`.
-5. **Clean up:** **Delete** on the page frees the space on the Xbox.
+### 1. Install
 
-Apart from inserting the disc, step 3 can also be done from the web page, which has the same buttons
-as the app. Leave the app open on the Xbox.
+1. Download the latest version from the repository's **Releases** page. Every build of `master` is
+   published there.
+2. Put the console in Developer Mode and turn on the Device Portal.
+3. In the PC browser, open the Device Portal and install the `.msix` with its dependencies.
 
-Other buttons: **Retry failed** tries the bad sectors once more, **Scan disc** runs a quick read-only
-health check, and **Settings** opens the settings.
+Step by step: [docs/install.md](docs/install.md). Removing the app also deletes the copies stored on
+the Xbox, so download them first.
+
+### 2. Copy the disc on the Xbox
+
+Open xISOBurn and insert the disc. Move between buttons with the D-pad and press **A** to choose.
+
+![The xISOBurn screen on the Xbox during a copy](docs/images/xbox-main.png)
+
+| On the screen | What it is |
+|---------------|------------|
+| Top line | The address to open on the PC and the PIN |
+| **Detect disc** | Reads the disc type, size, volume name and protection, and shows them in **Disc** |
+| **Copy / resume** | Starts the copy, or continues a paused or unfinished one from where it stopped |
+| **Cancel (B)** | Pauses the copy. Nothing is lost: **Copy / resume** continues later, even after the app was closed |
+| **Retry failed** | Tries the sectors that could not be read once more. It is only enabled when there are some |
+| **Scan disc** | A quick read-only health check that reads about 90 spots across the disc. It writes nothing |
+| **Settings** | The settings below |
+| **Progress** | The bar shows how much of the disc is copied. The text shows the current pass, speed and time left |
+| Log | Everything the app does, line by line. Scroll it with the D-pad |
+| Bottom line | What is happening now, or the result of the last action |
+
+Usually you only need **Detect disc** and then **Copy / resume**. Keep the app open while it copies.
+The screen stays on by itself.
+
+**Damaged discs:** the copy first takes everything that reads easily, then goes back to the damaged
+areas, slower and sector by sector. Sectors that still fail are listed in the log and in the `.map`
+file. Try **Retry failed** later, or after cleaning the disc.
+
+**CSS-protected DVD-Video:** nothing to do. The app decrypts the video while copying, so the ISO
+plays in any player. The disc has to be from the console's region.
+
+### 3. Download on the PC
+
+On the PC, open the address shown at the top of the Xbox screen (for example `http://192.168.1.50:8770/`)
+and type the PIN. The PC and the Xbox must be on the same network.
+
+![The xISOBurn web page on the PC](docs/images/web-main.png)
+
+- **Now on the Xbox** has the same buttons as the app, and the same disc, progress and status
+  information. You can run everything from the PC. Only inserting the disc needs you at the console.
+  A button that is greyed out is also unavailable on the Xbox at that moment.
+- **Recent log** opens the last lines of the log.
+- **Copies on the Xbox** lists every copy:
+  - **ISO** downloads the image. You can download while the copy is still running: the download
+    waits for the sectors that are still being read. If the network drops, resume it in the browser.
+  - **map** lists which sectors were read and which failed.
+  - **sha256** is the hash of the finished image. Check your download with
+    `Get-FileHash .\NAME.iso -Algorithm SHA256` in PowerShell and compare it with the page.
+  - **Delete** removes the copy from the Xbox to free space. It isn't offered while that copy runs.
+- **Log files** has the full log of each session.
+
+The page updates itself every 5 seconds. While the Xbox handles a click, the page shows a loading
+screen.
+
+### 4. Settings
+
+Open **Settings** on the Xbox, or **Settings** on the web page. Both have the same options and save to
+the same file. Changes apply from the next copy.
+
+| Xbox | Web page |
+|------|----------|
+| ![Settings on the Xbox](docs/images/xbox-settings.png) | ![Settings on the web page](docs/images/web-settings.png) |
+
+| Setting | Default | What it does |
+|---------|---------|--------------|
+| Port | 8770 | Port of the web page. Changing it needs an app restart |
+| Ask for the PIN | on | Turn it off only on a network you trust |
+| PIN | random | 4 to 8 digits. **New PIN** makes another one |
+| File name | empty | Name of the ISO. Empty uses the disc's volume name |
+| Write the image | on | Off only tests the drive and builds the map, without saving the ISO |
+| Decrypt CSS | on | Off copies DVD-Video as it is on the disc, still encrypted |
+| Sectors per read | 32 | How much is read at once in the good areas |
+| Timeout per command | 20 s | How long to wait for the drive on each read |
+| Skip ahead over areas with many errors | on | Copies the easy parts first and comes back to the damaged ones |
+| Retry passes | 2 | Extra passes over the sectors that still fail |
+| Drive speed for retries | DVD 1x | Reading slowly often recovers scratched sectors |
+| Drive's own retries | do not change | Experimental. Lower values make failing reads give up sooner |
+| First sector / Sectors | 0 / 0 | Copies only part of the disc, for tests. 0 sectors means to the end |
+
+The settings are stored in `config.json`. The details are in
+[docs/how-it-works.md](docs/how-it-works.md).
 
 ## Documentation
 
@@ -55,7 +128,7 @@ health check, and **Settings** opens the settings.
 | `xbox-app/xISOBurn/Core/` | Disc detection, multi-pass copy, sector map, settings, web server, disc scan |
 | `xbox-app/xISOBurn/Css/` | CSS: C# port of libdvdcss (cipher, tables, drive commands, session) |
 | `xbox-app/xISOBurn/Util/` | Logger and byte helpers |
-| `xbox-app/tools/make-assets.ps1` | Builds the package images from `designer.png` |
+| `docs/images/` | The pictures in this README |
 | `.github/workflows/build.yml` | Build and packaging on GitHub Actions |
 
 ## Output

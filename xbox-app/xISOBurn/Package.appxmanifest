@@ -38,7 +38,7 @@
       <!--
         Image paths have no scale qualifier: the resource system picks the
         .scale-100 / .scale-200 / .targetsize-* file that fits the screen.
-        Black background to match the artwork (designer.png).
+        Black background to match the artwork.
       -->
       <uap:VisualElements
         DisplayName="xISOBurn"

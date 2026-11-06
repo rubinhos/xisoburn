@@ -166,7 +166,7 @@ namespace xISOBurn.Core
         private static bool _faviconLoaded;
 
         /// <summary>
-        /// The app icon (the unplated 32 px tile from the package, made from designer.png), read once.
+        /// The app icon (the unplated 32 px tile from the package), read once.
         /// PNG works as a favicon in every current browser, also when requested as /favicon.ico.
         /// </summary>
         private byte[] Favicon()
