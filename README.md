@@ -23,8 +23,8 @@ You only install the Xbox app; the PC needs nothing.
 
 ## Quick start
 
-1. **Build:** push to `master` (or run the **build** workflow by hand). GitHub Actions produces the
-   `xISOBurn-xbox-1.0.N.0` artifact.
+1. **Get it:** download the latest version from the repository's **Releases** page (each build of
+   `master` is published there), or build it on GitHub Actions.
 2. **Install:** put the console in Developer Mode, turn on the Device Portal, and install the `.msix`
    with its dependencies from the PC browser. Step by step: [docs/install.md](docs/install.md).
 3. **Copy:** open xISOBurn and insert the disc. Choose **Detect disc**, then **Copy / resume**. **B**
@@ -55,7 +55,7 @@ health check, and **Settings** opens the settings.
 | `xbox-app/xISOBurn/Core/` | Disc detection, multi-pass copy, sector map, settings, web server, disc scan |
 | `xbox-app/xISOBurn/Css/` | CSS: C# port of libdvdcss (cipher, tables, drive commands, session) |
 | `xbox-app/xISOBurn/Util/` | Logger and byte helpers |
-| `xbox-app/tools/make-assets.ps1` | Builds the package images from `designer.png` |
+| `designer.svg`, `xbox-app/tools/` | Artwork source; `render-designer.ps1` renders it to `designer.png` (with Edge), and `make-assets.ps1` builds the package images |
 | `.github/workflows/build.yml` | Build and packaging on GitHub Actions |
 
 ## Output

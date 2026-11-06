@@ -344,7 +344,13 @@ namespace xISOBurn.Core
                 long count = length == 0 ? 0 : end - start + 1;
                 string type = iso ? "application/octet-stream" : "text/plain; charset=utf-8";
                 string disposition = iso ? "attachment" : "inline";
+                // ?dl=TOKEN (added by the page's script when the ISO link is clicked): echo it in a cookie, so
+                // the page knows the download has started and can hide its loading and resume refreshing.
+                string token;
+                string dlCookie = req.Query.TryGetValue("dl", out token) && IsToken(token)
+                    ? "Set-Cookie: xbdl=" + token + "; Path=/; SameSite=Strict\r\n" : "";
                 string headers = "HTTP/1.1 " + (partial ? "206 Partial Content" : "200 OK") + "\r\n" +
+                                 dlCookie +
                                  "Content-Type: " + type + "\r\n" +
                                  "Content-Length: " + count + "\r\n" +
                                  (partial ? "Content-Range: bytes " + start + "-" + end + "/" + length + "\r\n" : "") +
@@ -533,7 +539,8 @@ namespace xISOBurn.Core
 
             string enc = Uri.EscapeDataString(name);
             var links = new StringBuilder();
-            links.Append("<a href=\"/files/").Append(Uri.EscapeDataString(file)).Append("\">ISO</a>");
+            // data-dl: the page's script follows this download (see BusyOverlay).
+            links.Append("<a data-dl=\"1\" href=\"/files/").Append(Uri.EscapeDataString(file)).Append("\">ISO</a>");
             if (File.Exists(Path.Combine(_folder, name + ".map")))
                 links.Append(" &middot; <a href=\"/files/").Append(enc).Append(".map\">map</a>");
             if (sha != null)
@@ -681,7 +688,7 @@ namespace xISOBurn.Core
             "d.addEventListener('toggle',function(){S.setItem('open_'+d.id,d.open?'1':'0')});});" +
             "var y=S.getItem('scrollY');if(y!==null)window.scrollTo(0,parseInt(y,10));" +
             "function tick(){" +
-            "if(window.xbBusy)return;" + // a form is being sent: the response replaces the page anyway
+            "if(window.xbBusy){setTimeout(tick,5000);return;}" + // a form or a download is on its way
             "var sel=window.getSelection?String(window.getSelection()):'';" +
             "if(sel.length>0){setTimeout(tick,5000);return;}" +
             "S.setItem('scrollY',String(window.scrollY));location.reload();}" +
@@ -696,17 +703,31 @@ namespace xISOBurn.Core
         private const string BusyOverlay =
             "<div id=\"busy\" role=\"status\" aria-live=\"polite\"><div class=\"spin\"></div><div id=\"busytext\"></div></div>" +
             "<script>(function(){" +
-            "var o=document.getElementById('busy'),t=document.getElementById('busytext');" +
+            "var o=document.getElementById('busy'),t=document.getElementById('busytext'),n=0;" +
+            "function hide(){n++;o.className='';o.onclick=null;window.xbBusy=false;}" +
+            // Shows the overlay; with no answer after 'wait' ms (app closed, network down) it says so and
+            // closes on a click. 'n' tells a stale timer from the current one.
+            "function show(text,wait){var my=++n;t.textContent=text;o.className='on';window.xbBusy=true;" +
+            "setTimeout(function(){if(my!==n)return;" +
+            "t.textContent='No answer from the Xbox. Is xISOBurn still open on the screen? Click to close.';" +
+            "o.onclick=hide;},wait);return my;}" +
             "document.addEventListener('submit',function(e){" +
             "if(e.defaultPrevented)return;" +
             "var b=e.submitter||e.target.querySelector('button');" +
-            "t.textContent=(b&&b.getAttribute('data-wait'))||e.target.getAttribute('data-wait')||'Sending to the Xbox...';" +
-            "o.className='on';window.xbBusy=true;" +
-            // No answer (app closed, network down): say so after 30 s and let a click close the overlay.
-            "setTimeout(function(){if(!window.xbBusy)return;" +
-            "t.textContent='No answer from the Xbox. Is xISOBurn still open on the screen? Click to close.';" +
-            "o.onclick=function(){o.className='';o.onclick=null;window.xbBusy=false;};},30000);});" +
-            "window.addEventListener('pageshow',function(){o.className='';window.xbBusy=false;});" +
+            "show((b&&b.getAttribute('data-wait'))||e.target.getAttribute('data-wait')||'Sending to the Xbox...',30000);});" +
+            // ISO links: a download does not replace the page, so the 5 s reload could cancel the request
+            // before the Xbox answers (the click then seemed ignored). Pause the reload and follow the
+            // download: the server echoes ?dl=TOKEN in the xbdl cookie once the download has started.
+            "document.addEventListener('click',function(e){" +
+            "var a=e.target.closest?e.target.closest('a[data-dl]'):null;" +
+            "if(!a||e.button!==0||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;" +
+            "e.preventDefault();" +
+            "var k=Date.now().toString(36)+Math.random().toString(36).slice(2,8);" +
+            "var my=show('Starting the download...',60000),iv=setInterval(function(){" +
+            "if(my!==n){clearInterval(iv);return;}" +
+            "if(document.cookie.indexOf('xbdl='+k)>=0){clearInterval(iv);hide();}},250);" +
+            "location.href=a.href+(a.href.indexOf('?')<0?'?':'&')+'dl='+k;});" +
+            "window.addEventListener('pageshow',hide);" +
             "})();</script>";
 
         private static string Shell(string body, bool autoRefresh)
@@ -734,6 +755,15 @@ namespace xISOBurn.Core
                    BusyOverlay +
                    (autoRefresh ? RefreshScript : "") +
                    "</body></html>";
+        }
+
+        /// <summary>The download token the page sends (?dl=): letters and digits only, so it is safe in a header.</summary>
+        private static bool IsToken(string s)
+        {
+            if (string.IsNullOrEmpty(s) || s.Length > 32) return false;
+            foreach (char c in s)
+                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))) return false;
+            return true;
         }
 
         private static string Enc(string s)

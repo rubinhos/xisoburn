@@ -3,7 +3,15 @@
 You don't need to install anything on your PC. GitHub Actions builds the app, and the Xbox Device
 Portal (a web page served by the console) installs it.
 
-## 1. Build (GitHub Actions)
+## 1. Get the package
+
+**Easiest: GitHub Releases.** Every build of `master` is published as a release (`v1.0.N.0`) on the
+repository's **Releases** page, with exactly the files the Device Portal needs:
+- `xISOBurn_1.0.N.0_x64.msix`: the app;
+- `Dependencies-x64.zip`: the three `.appx` dependencies (the .NET Native runtime and VCLibs). Unzip it first;
+- `xISOBurn.cer`: the public part of the signing certificate.
+
+**Or build it yourself** on GitHub Actions:
 
 1. Push to `master`, or start the workflow by hand: **Actions** tab → **build** → **Run workflow**.
 2. Wait for the **Xbox app (UWP x64)** job to finish. It takes 5–10 minutes because the .NET Native
