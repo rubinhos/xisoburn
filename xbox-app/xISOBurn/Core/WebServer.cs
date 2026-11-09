@@ -49,6 +49,8 @@ namespace xISOBurn.Core
         private const int MaxBodyBytes = 4096;
         private const int FileChunk = 1 << 20;
         private const int RequestTimeoutMs = 20000;
+        private static readonly TimeSpan DownloadReportInterval = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan DownloadStallLimit = TimeSpan.FromSeconds(60);
         private const string PinCookie = "xisoburn_pin";
         private static readonly string[] Downloadable = { ".iso", ".map", ".sha256", ".log" };
 
@@ -395,6 +397,7 @@ namespace xISOBurn.Core
                 var sw = Stopwatch.StartNew();
                 var buffer = new byte[FileChunk];
                 long pos = start;
+                TimeSpan lastReport = TimeSpan.Zero;
                 if (iso) System.Threading.Interlocked.Increment(ref _activeDownloads);
                 try
                 {
@@ -412,10 +415,20 @@ namespace xISOBurn.Core
                             if (r <= 0) throw new IOException("file shorter than expected");
                             read += r;
                         }
-                        await output.WriteAsync(buffer, 0, n);
+                        await WithStallLimitAsync(output.WriteAsync(buffer, 0, n), name, req.Remote, pos, length);
                         pos += n;
+
+                        if (iso && sw.Elapsed - lastReport >= DownloadReportInterval)
+                        {
+                            // Heartbeat: shows in the log how far a download got and whether it is still moving.
+                            lastReport = sw.Elapsed;
+                            double mib = (pos - start) / 1048576.0;
+                            _log.Info("Web: " + name + " to " + req.Remote + ": " + (pos * 100 / length) + "% (" + mib.ToString("0") + " MiB this request, " +
+                                      (mib / Math.Max(0.001, sw.Elapsed.TotalSeconds)).ToString("0.0") + " MiB/s)" +
+                                      (live != null && LiveImages.Get(name) == live ? ", following the copy" : "") + ".");
+                        }
                     }
-                    await output.FlushAsync();
+                    await WithStallLimitAsync(output.FlushAsync(), name, req.Remote, pos, length);
                 }
                 finally
                 {
@@ -428,6 +441,25 @@ namespace xISOBurn.Core
                               RescueJob.FormatTime(sw.Elapsed) + " (" + (count / 1048576.0 / secs).ToString("0.0") + " MiB/s).");
                 }
             }
+        }
+
+        /// <summary>
+        /// Waits for a write to the browser, but not forever. Downloads were seen to stop with the write
+        /// never completing and never failing, which left the browser hanging until the app was closed.
+        /// Past the limit the connection is dropped (the caller's finally closes the socket), so the
+        /// browser reports a network error and its Resume continues from where it stopped (Range).
+        /// </summary>
+        private static async Task WithStallLimitAsync(Task write, string name, string remote, long pos, long length)
+        {
+            if (await Task.WhenAny(write, Task.Delay(DownloadStallLimit)) == write)
+            {
+                await write; // rethrows a failed write
+                return;
+            }
+            var observed = write.ContinueWith(t => { var ignored = t.Exception; }); // fails once the socket is closed
+            throw new DownloadInterruptedException("download of " + name + " by " + remote + " stalled at " + (pos * 100 / Math.Max(1, length)) +
+                                                   "%: the PC took no data for " + (int)DownloadStallLimit.TotalSeconds +
+                                                   " s. Connection closed; choose Resume in the browser's downloads.");
         }
 
         /// <summary>
