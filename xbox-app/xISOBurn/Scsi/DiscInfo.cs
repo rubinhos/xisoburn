@@ -34,6 +34,7 @@ namespace xISOBurn.Scsi
         }
 
         public static bool IsDvd(int p) { return p >= 0x0010 && p <= 0x002B; }
+        public static bool IsBluray(int p) { return p >= 0x0040 && p <= 0x0043; }
     }
 
     /// <summary>

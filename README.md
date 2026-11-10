@@ -14,6 +14,10 @@ You only install the Xbox app; the PC needs nothing.
   (`MEDIUM ERROR / UNRECOVERED READ ERROR`), the Xbox drive becomes a second reader.
 - **CSS-protected DVD-Video:** the app authenticates with the drive and decrypts the video while
   copying, so the ISO plays in any player. The disc has to be from the console's region.
+- **AACS / BD+ Blu-ray (experimental):** with key files you upload on the web page (**Blu-ray keys**:
+  `KEYDB.cfg`, and for BD+ the libbdplus `vm0` player files or cached conversion tables), the app
+  decrypts the `.m2ts` streams while copying and applies the BD+ fixups. The app ships no keys.
+  AACS 2 (UHD) discs only work with a VUK or unit keys in `KEYDB.cfg`.
 - **Download from the browser:** the copy reaches the PC over the local network. You can start the
   download while the copy is running, and resume it if the network drops. A PIN keeps others on the
   network out. The network is needed because files on USB storage are limited to about 2 GB in
@@ -162,6 +166,16 @@ The `.sha256` holds the hash of the finished image.
 
   libdvdcss itself builds on css-auth by Derek Fawcus, the DVD CSS ioctls example by Andrew T.
   Veliath, Frank A. Stevenson's work on CSS, DeCSSPlus and DecVOB.
+- **[libaacs](https://code.videolan.org/videolan/libaacs)** by VideoLAN and contributors
+  (LGPL-2.1-or-later), ported at commit `55be92b` into `Bluray/Aacs/`: the key waterfall and unit
+  decryption of `aacs.c`, the drive authentication of `mmc.c`, `mk.c`, `mkb.c`, `unit_key.c`,
+  `content_cert.c`, `cci.c`, and the KEYDB.cfg grammar of `keydbcfg-parser.y` (rewritten by hand).
+  libgcrypt is replaced by `Bluray/Crypto.cs` (.NET AES/SHA, ECDSA with `BigInteger`).
+- **[libbdplus](https://code.videolan.org/videolan/libbdplus)** by VideoLAN and contributors
+  (LGPL-2.1-or-later), ported at commit `a05a91d` into `Bluray/Bdplus/`: the DLX VM (`dlx.c`),
+  traps and slots (`interface.c`, `trap.c`, `slot.c`, `sha1.c`), the conversion table (`segment.c`)
+  and the run sequences of `internal.c` / `examples/bdplus_test.c`. The streaming patcher and SEGK
+  tables are not ported: the active table entries are applied as fixed patches per aligned unit.
 - **[GNU ddrescue](https://www.gnu.org/software/ddrescue/)**. The multi-pass copy follows its ideas:
   - a fast first pass that skips damaged areas;
   - a fill pass, then sector-by-sector scraping and retry passes;

@@ -27,6 +27,8 @@ namespace xISOBurn.Core
         public string VolumeLabel = "";
         public long Iso9660Sectors = -1;
         public bool Udf;
+        /// <summary>Blu-ray: AACS directory present / BD+ program present (from the UDF listing).</summary>
+        public bool Aacs, Bdplus;
         public long TotalSectors = -1;
         public string TotalSource = "";
         public List<DiscFile> Files = new List<DiscFile>();
@@ -108,6 +110,32 @@ namespace xISOBurn.Core
                 log.Info("UDF: anchor (AVDP) at sector 256");
             }
 
+            // Blu-ray: the files come from UDF (there is usually no ISO9660), and tell AACS / BD+ apart.
+            if (p.Udf && MmcProfiles.IsBluray(p.Profile))
+            {
+                try
+                {
+                    var udf = await Bluray.BluRaySession.ReadFileSystemAsync(drive, timeout, log);
+                    if (udf != null)
+                    {
+                        if (p.VolumeLabel.Length == 0 && !string.IsNullOrEmpty(udf.VolumeId)) p.VolumeLabel = udf.VolumeId;
+                        if (p.Files.Count == 0)
+                            foreach (var f in udf.Files)
+                                if (f.Extents.Count > 0)
+                                    p.Files.Add(new DiscFile { Path = f.Path, Lba = f.Extents[0].Lba, Size = f.Extents[0].Length });
+                        p.Files.Sort((a, b) => a.Lba.CompareTo(b.Lba));
+                        p.Aacs = udf.Find("AACS/Unit_Key_RO.inf") != null;
+                        p.Bdplus = udf.Find("BDSVM/00000.svm") != null;
+                        log.Info("UDF: \"" + udf.VolumeId + "\", " + udf.Files.Count + " files" +
+                                 (p.Aacs ? ", AACS" : ", no AACS") + (p.Bdplus ? ", BD+" : "") + ".");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    log.Info("UDF: could not list the files: " + ex.Message);
+                }
+            }
+
             p.DecideSize();
             log.Info("Size to copy: " + p.TotalSectors + " sectors (" + FormatSize(p.TotalSectors) + "), source: " + p.TotalSource);
             foreach (var w in p.Warnings) log.Info("WARNING: " + w);
@@ -168,6 +196,9 @@ namespace xISOBurn.Core
                 media += ", 1 layer";
             yield return media;
             yield return "Volume: " + (VolumeLabel.Length > 0 ? VolumeLabel : "(no ISO9660)") + (Udf ? " | UDF" : "");
+            if (MmcProfiles.IsBluray(Profile) && Udf)
+                yield return "Protection: " + (Aacs ? "AACS" + (Bdplus ? " + BD+" : "") + " (decrypted while copying with the keys uploaded on the web page)" : "none") +
+                             (Files.Count > 0 ? " | " + Files.Count + " files" : "");
             yield return "Size: " + TotalSectors.ToString("N0") + " sectors (" + FormatSize(TotalSectors) + ")" +
                          (Pfi != null && Pfi.NumberOfLayers > 1 ? " | layer change at LBA " + Pfi.Layer0Sectors.ToString("N0") : "");
             if (Cpst >= 0)

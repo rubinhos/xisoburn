@@ -55,6 +55,11 @@ namespace xISOBurn.Core
         /// ISO plays anywhere. false = copy the sectors as the drive returns them (still scrambled).
         /// </summary>
         public bool DecryptCss = true;
+        /// <summary>
+        /// Blu-ray: decrypt AACS (and apply BD+ fixups) while copying, with the keys uploaded from the web page
+        /// (keys folder). false = copy the stream files as the drive returns them (encrypted).
+        /// </summary>
+        public bool DecryptBluray = true;
         /// <summary>TCP port of the web page served by the app (the PC browser downloads from it). Needs an app restart.</summary>
         public int WebPort = 8770;
         /// <summary>Ask for the PIN on the web page (so nobody else on the network can download or delete copies).</summary>
@@ -93,6 +98,7 @@ namespace xISOBurn.Core
             cfg.WebPinRequired = flag("WebPinRequired");
             cfg.WriteImage = flag("WriteImage");
             cfg.DecryptCss = flag("DecryptCss");
+            cfg.DecryptBluray = flag("DecryptBluray");
             cfg.SkipOnErrors = flag("SkipOnErrors");
             cfg.KeepAwake = flag("KeepAwake");
             cfg.OutputName = get("OutputName");
@@ -160,6 +166,7 @@ namespace xISOBurn.Core
                 cfg.WriteImage = o.GetNamedBoolean("WriteImage", cfg.WriteImage);
                 cfg.OutputName = o.GetNamedString("OutputName", cfg.OutputName);
                 cfg.DecryptCss = o.GetNamedBoolean("DecryptCss", cfg.DecryptCss);
+                cfg.DecryptBluray = o.GetNamedBoolean("DecryptBluray", cfg.DecryptBluray);
                 cfg.WebPort = (int)o.GetNamedNumber("WebPort", cfg.WebPort);
                 cfg.WebPinRequired = o.GetNamedBoolean("WebPinRequired", cfg.WebPinRequired);
                 cfg.WebPin = o.GetNamedString("WebPin", cfg.WebPin);
@@ -217,6 +224,7 @@ namespace xISOBurn.Core
             sb.Append("  \"WriteImage\": ").Append(WriteImage ? "true" : "false").Append(",\n");
             sb.Append("  \"OutputName\": ").Append(JsonValue.CreateStringValue(OutputName ?? "").Stringify()).Append(",\n");
             sb.Append("  \"DecryptCss\": ").Append(DecryptCss ? "true" : "false").Append(",\n");
+            sb.Append("  \"DecryptBluray\": ").Append(DecryptBluray ? "true" : "false").Append(",\n");
             sb.Append("  \"WebPort\": ").Append(WebPort.ToString(inv)).Append(",\n");
             sb.Append("  \"WebPinRequired\": ").Append(WebPinRequired ? "true" : "false").Append(",\n");
             sb.Append("  \"WebPin\": ").Append(JsonValue.CreateStringValue(WebPin ?? "").Stringify()).Append(",\n");
@@ -234,6 +242,7 @@ namespace xISOBurn.Core
                    " | range " + StartSector + "+" + (SectorLimit > 0 ? SectorLimit.ToString() : "end") +
                    " | write image: " + (WriteImage ? "yes" : "no") +
                    " | decrypt CSS: " + (DecryptCss ? "yes" : "no") +
+                   " | decrypt Blu-ray: " + (DecryptBluray ? "yes" : "no") +
                    " | web port " + WebPort + (WebPinRequired ? " with PIN" : " without PIN") +
                    " | keep awake: " + (KeepAwake ? "yes" : "no");
         }

@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Windows.Security.Cryptography;
 using Windows.Security.Cryptography.Core;
+using xISOBurn.Bluray;
 using xISOBurn.Css;
 using xISOBurn.Scsi;
 using xISOBurn.Util;
@@ -71,6 +72,9 @@ namespace xISOBurn.Core
         /// <summary>CSS: true when the drive was authenticated and the video is decrypted while copying.</summary>
         public bool CssDecrypting;
         public long CssDescrambled, CssLeftScrambled;
+        /// <summary>Blu-ray: true when AACS (and possibly BD+) is decrypted while copying.</summary>
+        public bool BlurayDecrypting;
+        public long BlurayUnitsDecrypted, BlurayUnitsFailed;
         public string Sha256;
         public string ImagePath, MapPath;
         public TimeSpan Elapsed;
@@ -142,6 +146,9 @@ namespace xISOBurn.Core
         private const int MaxReauthentications = 20;
         private CssSession _css;
 
+        // Blu-ray: AACS / BD+ session that decrypts the stream files before they are written.
+        private BluRaySession _bd;
+
         /// <summary>File names used for a disc (also used by the UI to look for a previous rescue).</summary>
         public static string BaseNameFor(CopyConfig cfg, DiscProbe probe)
         {
@@ -196,6 +203,7 @@ namespace xISOBurn.Core
             {
                 await OpenImageForCopyAsync(total);
                 if (_probe.Cpst == 1) await StartCssAsync();
+                if (MmcProfiles.IsBluray(_probe.Profile)) await StartBlurayAsync();
                 await LogAndApplyDriveRetriesAsync();
 
                 if (_map.CountIn(SectorState.Untried, first, end) > 0)
@@ -245,6 +253,8 @@ namespace xISOBurn.Core
                 // DecryptCss off): decrypt them in the image file, so the image is consistent.
                 if (_css != null && _image != null && resumedWithData)
                     await DecryptImagePassAsync();
+                if (_bd != null && _image != null && resumedWithData)
+                    await BlurayImagePassAsync();
 
                 result.Finished = _map.Count(SectorState.Untried) == 0 && _map.Count(SectorState.Pending) == 0 &&
                                   (_map.RetryPassesDone >= _cfg.RetryPasses || _map.Count(SectorState.Bad) == 0);
@@ -301,6 +311,12 @@ namespace xISOBurn.Core
             result.RecoveredThisRun = _recovered;
             result.RefusedThisRun = _refused;
             result.CssDecrypting = _css != null;
+            result.BlurayDecrypting = _bd != null;
+            if (_bd != null)
+            {
+                result.BlurayUnitsDecrypted = _bd.UnitsDecrypted;
+                result.BlurayUnitsFailed = _bd.UnitsFailed;
+            }
             if (_css != null)
             {
                 result.CssDescrambled = _css.Descrambled;
@@ -315,6 +331,10 @@ namespace xISOBurn.Core
                 _log.Info("CSS this run: " + _css.Descrambled + " sector(s) decrypted" +
                           (_css.LeftScrambled > 0 ? ", " + _css.LeftScrambled + " left scrambled (no title key)" : "") +
                           (_css.Reauthentications > 0 ? ", " + _css.Reauthentications + " re-authentication(s)" : "") + ".");
+            if (_bd != null)
+                _log.Info("Blu-ray this run: " + _bd.UnitsDecrypted.ToString("N0") + " AACS unit(s) decrypted" +
+                          (_bd.UnitsFailed > 0 ? ", " + _bd.UnitsFailed.ToString("N0") + " could not be decrypted (copied as read)" : "") +
+                          (_bd.BdplusReady ? ", " + _bd.PatchesApplied.ToString("N0") + " BD+ patch(es) applied" : "") + ".");
             if (_retried > 0)
                 _log.Info("Retries this run: " + _recovered + " of " + _retried + " sector(s) recovered.");
             _log.Info(result.Finished ? "Nothing left to try." : result.Cancelled ? "Cancelled; run again to resume." :
@@ -577,6 +597,40 @@ namespace xISOBurn.Core
         }
 
         /// <summary>
+        /// Blu-ray: reads the file system, sets up AACS with the uploaded keys and runs BD+. If that
+        /// fails the copy goes on and the stream files stay encrypted.
+        /// </summary>
+        private async Task StartBlurayAsync()
+        {
+            if (!_cfg.DecryptBluray)
+            {
+                _log.Info("Blu-ray: DecryptBluray is off; the stream files are copied encrypted.");
+                return;
+            }
+            var session = new BluRaySession(_drive, _log, (uint)_cfg.TimeoutSeconds, BluRaySession.KeysFolder(_folder));
+            bool ok;
+            try { ok = await session.StartAsync(_ct); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _log.Info("Blu-ray: setup error: " + ex.GetType().Name + ": " + ex.Message);
+                ok = false;
+            }
+            if (!ok || !session.Active) return;
+            _bd = session;
+            _map.Hold = lba => session.IsHeld(lba, _map);
+        }
+
+        /// <summary>Resumed Blu-ray copy: decrypts and patches the stream units already in the image.</summary>
+        private async Task BlurayImagePassAsync()
+        {
+            BeginPhase("Decrypt pass: stream files already in the image", _bd.StreamSectors);
+            long changed = await _bd.ImagePassAsync(_image, _map, n => { _phaseDone += n; Report(_phaseDone); }, _ct);
+            _log.Info("Decrypt pass: " + changed.ToString("N0") + " aligned unit(s) in the image were decrypted or patched.");
+            EndPhase();
+        }
+
+        /// <summary>
         /// Reads the VOB ranges back from the image file and decrypts, in place, any sector still
         /// scrambled. Reads only the local file, not the disc.
         /// </summary>
@@ -663,6 +717,7 @@ namespace xISOBurn.Core
             if (_image != null)
             {
                 if (_css != null) _css.Descramble(lba, _buffer, count);
+                if (_bd != null) _bd.ProcessRead(lba, _buffer, count, _map, _image);
                 _image.Seek(lba * SectorSize, SeekOrigin.Begin);
                 _image.Write(_buffer, 0, count * SectorSize);
             }

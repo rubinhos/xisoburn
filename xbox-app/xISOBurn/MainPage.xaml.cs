@@ -482,6 +482,7 @@ namespace xISOBurn
                 SetBusy(true, true);
                 StatusText.Text = "Copying to the Xbox" +
                                   (_probe.Cpst == 1 && cfg.DecryptCss ? " (CSS disc: decrypting the video)" : "") +
+                                  (_probe.Aacs && cfg.DecryptBluray ? " (AACS disc: setting up the keys, see the log)" : "") +
                                   "... do not leave the app. B pauses (progress is kept). " +
                                   "The download can already start on the web page.";
                 Bar.Value = 0;
@@ -514,6 +515,11 @@ namespace xISOBurn
                 if (result.CssDecrypting)
                     StatusText.Text += " CSS: " + result.CssDescrambled.ToString("N0") + " sector(s) decrypted" +
                                        (result.CssLeftScrambled > 0 ? ", " + result.CssLeftScrambled.ToString("N0") + " left scrambled (see log)" : "") + ".";
+                if (result.BlurayDecrypting)
+                    StatusText.Text += " Blu-ray: " + result.BlurayUnitsDecrypted.ToString("N0") + " unit(s) decrypted" +
+                                       (result.BlurayUnitsFailed > 0 ? ", " + result.BlurayUnitsFailed.ToString("N0") + " not decrypted (see log)" : "") + ".";
+                else if (_probe.Aacs && cfg.DecryptBluray)
+                    StatusText.Text += " Blu-ray: not decrypted (no usable keys; see the log).";
                 if (result.RefusedThisRun >= RescueJob.RefusalNoticeAfter)
                     StatusText.Text += " " + RefusalMessage(result.RefusedThisRun);
             }
@@ -621,6 +627,7 @@ namespace xISOBurn
             OutputNameBox.Text = cfg.OutputName;
             WriteImageBox.IsChecked = cfg.WriteImage;
             DecryptCssBox.IsChecked = cfg.DecryptCss;
+            DecryptBlurayBox.IsChecked = cfg.DecryptBluray;
             SelectByTag(SectorsPerReadBox, cfg.SectorsPerRead.ToString());
             TimeoutBox.Text = cfg.TimeoutSeconds.ToString();
             SkipBox.IsChecked = cfg.SkipOnErrors;
@@ -702,6 +709,7 @@ namespace xISOBurn
                 { "OutputName", OutputNameBox.Text },
                 { "WriteImage", WriteImageBox.IsChecked == true ? "true" : "false" },
                 { "DecryptCss", DecryptCssBox.IsChecked == true ? "true" : "false" },
+                { "DecryptBluray", DecryptBlurayBox.IsChecked == true ? "true" : "false" },
                 { "SectorsPerRead", TagOf(SectorsPerReadBox, "32") },
                 { "TimeoutSeconds", TimeoutBox.Text },
                 { "SkipOnErrors", SkipBox.IsChecked == true ? "true" : "false" },

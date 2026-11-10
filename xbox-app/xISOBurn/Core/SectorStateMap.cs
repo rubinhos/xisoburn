@@ -33,6 +33,12 @@ namespace xISOBurn.Core
         public string Volume { get; private set; }
         public int RetryPassesDone;
 
+        /// <summary>
+        /// Set by a running copy: true for a sector that was read but whose data in the image will still
+        /// change (a Blu-ray aligned unit not complete yet). A download following the copy waits for it.
+        /// </summary>
+        public Func<long, bool> Hold;
+
         public SectorStateMap(long totalSectors, string volume)
         {
             TotalSectors = totalSectors;
