@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Windows.Security.Cryptography;
 using Windows.Security.Cryptography.Core;
+using xISOBurn.Bluray;
 using xISOBurn.Css;
 using xISOBurn.Scsi;
 using xISOBurn.Util;
@@ -71,6 +72,9 @@ namespace xISOBurn.Core
         /// <summary>CSS: true when the drive was authenticated and the video is decrypted while copying.</summary>
         public bool CssDecrypting;
         public long CssDescrambled, CssLeftScrambled;
+        /// <summary>Blu-ray: true when AACS (and possibly BD+) is decrypted while copying.</summary>
+        public bool BlurayDecrypting;
+        public long BlurayUnitsDecrypted, BlurayUnitsFailed;
         public string Sha256;
         public string ImagePath, MapPath;
         public TimeSpan Elapsed;
@@ -114,8 +118,9 @@ namespace xISOBurn.Core
         private readonly string _folder;
 
         private SectorStateMap _map;
-        private FileStream _image;
-        private string _imageName, _imagePath, _mapPath;
+        private CopyStore _store;
+        private Stream _image;
+        private string _imageName, _mapName, _imagePath, _mapPath; // names in the store; paths only for the log
         private byte[] _buffer;
         private IProgress<RescueProgress> _progress;
         private CancellationToken _ct;
@@ -141,6 +146,9 @@ namespace xISOBurn.Core
         // CSS (docs/how-it-works.md): authenticated session that descrambles sectors before they are written.
         private const int MaxReauthentications = 20;
         private CssSession _css;
+
+        // Blu-ray: AACS / BD+ session that decrypts the stream files before they are written.
+        private BluRaySession _bd;
 
         /// <summary>File names used for a disc (also used by the UI to look for a previous rescue).</summary>
         public static string BaseNameFor(CopyConfig cfg, DiscProbe probe)
@@ -180,14 +188,25 @@ namespace xISOBurn.Core
 
             string baseName = BaseName();
             _imageName = baseName + ".iso";
-            _imagePath = Path.Combine(_folder, _imageName);
-            _mapPath = Path.Combine(_folder, baseName + ".map");
+            _mapName = baseName + ".map";
+            try
+            {
+                _store = await CopyStore.OpenAsync(_cfg.OutputFolder, _folder);
+            }
+            catch (Exception ex)
+            {
+                result.Error = ex.Message;
+                _log.Info("STOPPED: " + ex.Message);
+                return result;
+            }
+            _imagePath = _store.Description + ": " + _imageName;
+            _mapPath = _store.Description + ": " + _mapName;
             result.MapPath = _mapPath;
             result.ImagePath = _cfg.WriteImage ? _imagePath : null;
 
             _log.Section("Rescue");
             _log.Info("Settings: " + _cfg.Describe());
-            LoadOrCreateMap(total);
+            await LoadOrCreateMapAsync(total);
             bool resumedWithData = _map.Count(SectorState.Ok) > 0;
             _log.Info("Work range: LBA " + first + " to " + (end - 1) + (first > 0 || end < total ? " (partial range)" : " (whole disc)"));
             _sw.Start();
@@ -196,6 +215,7 @@ namespace xISOBurn.Core
             {
                 await OpenImageForCopyAsync(total);
                 if (_probe.Cpst == 1) await StartCssAsync();
+                if (MmcProfiles.IsBluray(_probe.Profile)) await StartBlurayAsync();
                 await LogAndApplyDriveRetriesAsync();
 
                 if (_map.CountIn(SectorState.Untried, first, end) > 0)
@@ -245,6 +265,8 @@ namespace xISOBurn.Core
                 // DecryptCss off): decrypt them in the image file, so the image is consistent.
                 if (_css != null && _image != null && resumedWithData)
                     await DecryptImagePassAsync();
+                if (_bd != null && _image != null && resumedWithData)
+                    await BlurayImagePassAsync();
 
                 result.Finished = _map.Count(SectorState.Untried) == 0 && _map.Count(SectorState.Pending) == 0 &&
                                   (_map.RetryPassesDone >= _cfg.RetryPasses || _map.Count(SectorState.Bad) == 0);
@@ -278,7 +300,7 @@ namespace xISOBurn.Core
                 try
                 {
                     result.Sha256 = await HashImageAsync(total);
-                    File.WriteAllText(Path.Combine(_folder, baseName + ".sha256"), result.Sha256 + " *" + _imageName + "\n", new UTF8Encoding(false));
+                    await _store.WriteTextAtomicAsync(baseName + ".sha256", result.Sha256 + " *" + _imageName + "\n");
                     SaveMap(result.Sha256);
                 }
                 catch (OperationCanceledException)
@@ -301,6 +323,12 @@ namespace xISOBurn.Core
             result.RecoveredThisRun = _recovered;
             result.RefusedThisRun = _refused;
             result.CssDecrypting = _css != null;
+            result.BlurayDecrypting = _bd != null;
+            if (_bd != null)
+            {
+                result.BlurayUnitsDecrypted = _bd.UnitsDecrypted;
+                result.BlurayUnitsFailed = _bd.UnitsFailed;
+            }
             if (_css != null)
             {
                 result.CssDescrambled = _css.Descrambled;
@@ -315,6 +343,11 @@ namespace xISOBurn.Core
                 _log.Info("CSS this run: " + _css.Descrambled + " sector(s) decrypted" +
                           (_css.LeftScrambled > 0 ? ", " + _css.LeftScrambled + " left scrambled (no title key)" : "") +
                           (_css.Reauthentications > 0 ? ", " + _css.Reauthentications + " re-authentication(s)" : "") + ".");
+            if (_bd != null)
+                _log.Info("Blu-ray this run: " + _bd.UnitsDecrypted.ToString("N0") + " AACS unit(s) decrypted" +
+                          (_bd.UnitsFailed > 0 ? ", " + _bd.UnitsFailed.ToString("N0") + " could not be decrypted (copied as read)" : "") +
+                          (_bd.BdplusReady ? ", " + _bd.PatchesApplied.ToString("N0") + " BD+ patch(es) applied" : "") +
+                          (_bd.MarkDecrypted ? ", " + _bd.RenamesApplied + " directory entr(y/ies) renamed to mark the image as decrypted" : "") + ".");
             if (_retried > 0)
                 _log.Info("Retries this run: " + _recovered + " of " + _retried + " sector(s) recovered.");
             _log.Info(result.Finished ? "Nothing left to try." : result.Cancelled ? "Cancelled; run again to resume." :
@@ -335,19 +368,22 @@ namespace xISOBurn.Core
             return BaseNameFor(_cfg, _probe);
         }
 
-        private void LoadOrCreateMap(long total)
+        private async Task LoadOrCreateMapAsync(long total)
         {
-            if (File.Exists(_mapPath))
+            string text = null;
+            try { text = await _store.ReadTextAsync(_mapName); }
+            catch (Exception ex) { _log.Info("Could not read " + _mapName + ": " + ex.Message); }
+            if (text != null)
             {
                 string reason;
                 SectorStateMap loaded = null;
-                try { loaded = SectorStateMap.Load(_mapPath, total, out reason); }
+                try { loaded = SectorStateMap.Parse(text, total, out reason); }
                 catch (Exception ex) { reason = ex.Message; }
 
                 if (loaded != null && _cfg.WriteImage && loaded.Count(SectorState.Ok) > 0)
                 {
                     // The data of every Ok sector must be in the image.
-                    if (!File.Exists(_imagePath))
+                    if (!await _store.ExistsAsync(_imageName))
                     {
                         reason = "the map says sectors were read, but the image " + _imageName + " is missing";
                         loaded = null;
@@ -356,13 +392,13 @@ namespace xISOBurn.Core
                 if (loaded != null)
                 {
                     _map = loaded;
-                    _log.Info("Resuming from " + Path.GetFileName(_mapPath) + ": " + _map.Summary());
+                    _log.Info("Resuming from " + _mapPath + ": " + _map.Summary());
                     return;
                 }
-                string old = _mapPath + ".old";
-                if (File.Exists(old)) File.Delete(old);
-                File.Move(_mapPath, old);
-                _log.Info("Existing map not usable (" + reason + "); renamed to " + Path.GetFileName(old) + ", starting over.");
+                // Keeps the .map extension: on USB the app only sees the file types it declares.
+                string old = Path.GetFileNameWithoutExtension(_mapName) + ".old.map";
+                await _store.ReplaceAsync(_mapName, old);
+                _log.Info("Existing map not usable (" + reason + "); renamed to " + old + ", starting over.");
             }
             _map = new SectorStateMap(total, _probe.VolumeLabel);
             _log.Info("New rescue: " + total + " sectors.");
@@ -373,31 +409,57 @@ namespace xISOBurn.Core
             return _cfg.WriteImage ? _imageName : null;
         }
 
-        private Task OpenImageForCopyAsync(long total)
+        private async Task OpenImageForCopyAsync(long total)
         {
             if (!_cfg.WriteImage)
             {
                 _log.Info("Read-only mode: the image is not written (data read in this mode is discarded).");
-                return Task.FromResult(0);
+                return;
             }
-            OpenImage(total);
+            await OpenImageAsync(total);
             // From now on the web page can follow this copy (download while reading).
             LiveImages.Begin(_imageName, _map);
-            return Task.FromResult(0);
         }
 
-        private void OpenImage(long total)
+        private async Task OpenImageAsync(long total)
         {
-            // bufferSize 1 = no .NET-level buffering: every write reaches the OS at once, so the web server
-            // (another FileStream on the same file) never sends stale zeros for a sector already marked Ok.
-            _image = new FileStream(_imagePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, 1);
-            if (_image.Length != total * SectorSize)
+            _image = await _store.OpenWriteAsync(_imageName);
+            long need = total * SectorSize;
+            if (_image.Length != need)
             {
                 // Reserve the full size up front: if space runs out, fail now and not hours later.
                 // Sectors never written stay zero, which is exactly what the image must hold for them.
-                _image.SetLength(total * SectorSize);
+                // On USB this is also the test of the file system: FAT32 cannot hold a file of 4 GiB or more.
+                bool wasEmpty = _image.Length == 0;
+                try
+                {
+                    _image.SetLength(need);
+                }
+                catch (Exception ex)
+                {
+                    _image.Dispose();
+                    _image = null;
+                    if (wasEmpty) { try { await _store.DeleteAsync(_imageName); } catch (Exception) { } }
+                    long free = -1;
+                    try { free = await _store.FreeBytesAsync(); } catch (Exception) { }
+                    string why = ex.HResult == unchecked((int)0x80070070)
+                        ? "not enough space on " + _store.Description + " for the image: it needs " + DiscProbe.FormatSize(total) +
+                          ", " + CopyStore.FormatBytes(free) + " free. Choose another destination in Settings (a USB drive), free space, " +
+                          "or copy part of the disc (StartSector / SectorLimit)."
+                        : "the image of " + DiscProbe.FormatSize(total) + " cannot be created on " + _store.Description + " (" + free + " bytes free): 0x" +
+                          ex.HResult.ToString("X8") + " " + ex.Message +
+                          (_store.IsUsb && need >= 4L * 1024 * 1024 * 1024 ? ". A FAT32 drive cannot hold files of 4 GiB or more: format it as exFAT or NTFS." : "");
+                    throw new IOException(why, ex);
+                }
             }
             _log.Info("Image: " + _imagePath + " (" + DiscProbe.FormatSize(total) + ")");
+        }
+
+        private void FlushImage()
+        {
+            var fs = _image as FileStream;
+            if (fs != null) fs.Flush(true);
+            else _image.Flush();
         }
 
         private void CloseImage()
@@ -405,7 +467,7 @@ namespace xISOBurn.Core
             if (_image == null) return;
             try
             {
-                _image.Flush(true);
+                FlushImage();
                 _image.Dispose();
             }
             catch (Exception ex)
@@ -419,9 +481,10 @@ namespace xISOBurn.Core
         {
             try
             {
-                // Image data first, then the map that claims it is there.
-                if (_image != null) _image.Flush(true);
-                _map.Save(_mapPath, MapImageName(), sha256);
+                // Image data first, then the map that claims it is there. The copy runs on a pool thread,
+                // so waiting here for the (possibly WinRT) store is safe.
+                if (_image != null) FlushImage();
+                _store.WriteTextAtomicAsync(_mapName, _map.ToText(MapImageName(), sha256)).GetAwaiter().GetResult();
                 _lastMapSave = _sw.Elapsed;
             }
             catch (Exception ex)
@@ -577,6 +640,41 @@ namespace xISOBurn.Core
         }
 
         /// <summary>
+        /// Blu-ray: reads the file system, sets up AACS with the uploaded keys and runs BD+. If that
+        /// fails the copy goes on and the stream files stay encrypted.
+        /// </summary>
+        private async Task StartBlurayAsync()
+        {
+            if (!_cfg.DecryptBluray)
+            {
+                _log.Info("Blu-ray: DecryptBluray is off; the stream files are copied encrypted.");
+                return;
+            }
+            var session = new BluRaySession(_drive, _log, (uint)_cfg.TimeoutSeconds, BluRaySession.KeysFolder(_folder));
+            session.MarkDecrypted = _cfg.MarkBlurayDecrypted;
+            bool ok;
+            try { ok = await session.StartAsync(_ct); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _log.Info("Blu-ray: setup error: " + ex.GetType().Name + ": " + ex.Message);
+                ok = false;
+            }
+            if (!ok || !session.Active) return;
+            _bd = session;
+            _map.Hold = lba => session.IsHeld(lba, _map);
+        }
+
+        /// <summary>Resumed Blu-ray copy: decrypts and patches the stream units already in the image.</summary>
+        private async Task BlurayImagePassAsync()
+        {
+            BeginPhase("Decrypt pass: stream files already in the image", _bd.StreamSectors);
+            long changed = await _bd.ImagePassAsync(_image, _map, n => { _phaseDone += n; Report(_phaseDone); }, _ct);
+            _log.Info("Decrypt pass: " + changed.ToString("N0") + " aligned unit(s) in the image were decrypted or patched.");
+            EndPhase();
+        }
+
+        /// <summary>
         /// Reads the VOB ranges back from the image file and decrypts, in place, any sector still
         /// scrambled. Reads only the local file, not the disc.
         /// </summary>
@@ -663,6 +761,7 @@ namespace xISOBurn.Core
             if (_image != null)
             {
                 if (_css != null) _css.Descramble(lba, _buffer, count);
+                if (_bd != null) _bd.ProcessRead(lba, _buffer, count, _map, _image);
                 _image.Seek(lba * SectorSize, SeekOrigin.Begin);
                 _image.Write(_buffer, 0, count * SectorSize);
             }
@@ -740,7 +839,7 @@ namespace xISOBurn.Core
             BeginPhase("Computing SHA-256 of the image", total);
             var hash = HashAlgorithmProvider.OpenAlgorithm(HashAlgorithmNames.Sha256).CreateHash();
             var chunk = new byte[1 << 20];
-            using (var f = new FileStream(_imagePath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20))
+            using (var f = await _store.OpenReadAsync(_imageName))
             {
                 long remaining = total * SectorSize;
                 while (remaining > 0)

@@ -113,6 +113,20 @@
                     <TextBox x:Name="OutputNameBox" Header="File name (empty = the disc's volume label)"/>
                     <CheckBox x:Name="WriteImageBox" Content="Write the image (off = only test the drive and build the map)"/>
                     <CheckBox x:Name="DecryptCssBox" Content="Decrypt CSS-protected DVD-Video while copying (off = copy it scrambled)"/>
+                    <CheckBox x:Name="DecryptBlurayBox" Content="Decrypt Blu-ray (AACS, BD+) while copying, with the keys uploaded on the web page"/>
+                    <CheckBox x:Name="MarkDecryptedBox" Content="Blu-ray: mark the image as decrypted (renames AACS, so VLC and Kodi open it; the ISO is then no longer identical to the disc)"/>
+
+                    <!-- Destination: the app storage or a folder on a USB drive (browsed here; also on the web page). -->
+                    <TextBlock Text="Destination of the copies" FontWeight="SemiBold" FontSize="15" Margin="0,8,0,0"/>
+                    <TextBlock x:Name="DestText" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="BrowsePathText" FontSize="12" Opacity="0.7" TextWrapping="Wrap"/>
+                    <ListView x:Name="BrowseList" MaxHeight="170" IsItemClickEnabled="True" SelectionMode="None"
+                              ItemClick="BrowseList_ItemClick"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="UseFolderButton" Content="Use this folder" Click="UseFolderButton_Click"/>
+                        <TextBox x:Name="NewFolderBox" PlaceholderText="New folder name" Width="180"/>
+                        <Button x:Name="CreateFolderButton" Content="Create" Click="CreateFolderButton_Click"/>
+                    </StackPanel>
 
                     <TextBlock Text="Reading" FontWeight="SemiBold" FontSize="15" Margin="0,8,0,0"/>
                     <ComboBox x:Name="SectorsPerReadBox" Header="Sectors per read" HorizontalAlignment="Stretch">

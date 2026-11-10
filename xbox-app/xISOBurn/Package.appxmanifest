@@ -50,6 +50,23 @@
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.jpg"/>
         <uap:SplashScreen Image="Assets\SplashScreen.jpg" BackgroundColor="#000000"/>
       </uap:VisualElements>
+      <!--
+        On removable drives a UWP app only sees files of the types it declares here (removableStorage
+        capability below): the copies' .iso/.map/.sha256 and the logs. Needed for USB storage.
+      -->
+      <Extensions>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="xisoburnfiles">
+            <uap:DisplayName>xISOBurn disc copy</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.iso</uap:FileType>
+              <uap:FileType>.map</uap:FileType>
+              <uap:FileType>.sha256</uap:FileType>
+              <uap:FileType>.log</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+      </Extensions>
     </Application>
   </Applications>
 
@@ -59,6 +76,8 @@
       PC receiver lives. internetClient is not needed: the app never talks to the internet.
     -->
     <Capability Name="privateNetworkClientServer" />
+    <!-- removableStorage: USB drives on the Xbox, for copies too big for the app's own storage (Blu-ray). -->
+    <uap:Capability Name="removableStorage" />
     <!--
       Both capabilities below come from the XBSX2 Package.appxmanifest (PR #11):
       - "optical": device capability for the optical drive;
