@@ -166,8 +166,14 @@ namespace xISOBurn.Core
         /// <summary>Loads a map written by ToText. Returns null (with the reason) if it cannot be used.</summary>
         public static SectorStateMap Load(string path, long expectedTotal, out string reason)
         {
+            return Parse(File.ReadAllText(path), expectedTotal, out reason);
+        }
+
+        /// <summary>Parses the text of a map (ToText). Returns null (with the reason) if it cannot be used.</summary>
+        public static SectorStateMap Parse(string text, long expectedTotal, out string reason)
+        {
             reason = "";
-            var lines = File.ReadAllLines(path);
+            var lines = text.Replace("\r", "").Split('\n');
             if (lines.Length == 0 || lines[0].Trim() != Magic)
             {
                 reason = "not a rescue map (older format?)";

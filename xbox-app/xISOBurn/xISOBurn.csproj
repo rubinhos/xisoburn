@@ -67,6 +67,7 @@
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Core\CopyConfig.cs" />
+    <Compile Include="Core\CopyStore.cs" />
     <Compile Include="Core\DiscProbe.cs" />
     <Compile Include="Core\DiscScan.cs" />
     <Compile Include="Core\IsoFiles.cs" />

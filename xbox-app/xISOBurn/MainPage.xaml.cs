@@ -258,14 +258,13 @@ namespace xISOBurn
             _freeSpaceAt = DateTime.UtcNow;
             try
             {
-                var props = await ApplicationData.Current.LocalFolder.Properties.RetrievePropertiesAsync(new[] { "System.FreeSpace" });
-                object v;
-                if (props.TryGetValue("System.FreeSpace", out v) && v is ulong)
-                    _freeSpace = ((ulong)v / 1073741824.0).ToString("0.0") + " GiB free on the Xbox";
+                var store = await CopyStore.OpenAsync(_webCfg != null ? _webCfg.OutputFolder : "", _folder);
+                long free = await store.FreeBytesAsync();
+                _freeSpace = free >= 0 ? CopyStore.FormatBytes(free) + " free on " + store.Description : "";
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                _freeSpace = "";
+                _freeSpace = ex.Message;
             }
         }
 
@@ -384,13 +383,15 @@ namespace xISOBurn
             {
                 string msg;
                 var cfg = CopyConfig.Load(_folder, out msg);
-                string path = System.IO.Path.Combine(_folder, RescueJob.BaseNameFor(cfg, _probe) + ".map");
+                string mapName = RescueJob.BaseNameFor(cfg, _probe) + ".map";
                 long total = _probe.TotalSectors;
                 SectorStateMap map = null;
                 try
                 {
-                    if (System.IO.File.Exists(path))
-                        map = await Task.Run(() => { string reason; return SectorStateMap.Load(path, total, out reason); });
+                    var store = await CopyStore.OpenAsync(cfg.OutputFolder, _folder);
+                    string text = await store.ReadTextAsync(mapName);
+                    if (text != null)
+                        map = await Task.Run(() => { string reason; return SectorStateMap.Parse(text, total, out reason); });
                 }
                 catch (Exception ex)
                 {
@@ -628,6 +629,9 @@ namespace xISOBurn
             WriteImageBox.IsChecked = cfg.WriteImage;
             DecryptCssBox.IsChecked = cfg.DecryptCss;
             DecryptBlurayBox.IsChecked = cfg.DecryptBluray;
+            _destChoice = cfg.OutputFolder ?? "";
+            ShowDestChoice();
+            var ignored = BrowseAsync(_destChoice);
             SelectByTag(SectorsPerReadBox, cfg.SectorsPerRead.ToString());
             TimeoutBox.Text = cfg.TimeoutSeconds.ToString();
             SkipBox.IsChecked = cfg.SkipOnErrors;
@@ -657,6 +661,96 @@ namespace xISOBurn
                 await notice.ShowAsync();
             }
             SettingsButton.Focus(FocusState.Programmatic);
+        }
+
+        // ------------------------------------------------------------ destination browser (Settings)
+
+        private string _destChoice = "";   // the OutputFolder that Save will store
+        private string _browsePath = "";   // folder shown in the list ("" = drive list)
+        private List<UsbBrowser.Entry> _browseEntries = new List<UsbBrowser.Entry>();
+        private const string AppStorageEntry = "\u0001app";
+        private const string UpEntry = "\u0001up";
+
+        private void ShowDestChoice()
+        {
+            DestText.Text = "Copies go to: " + (_destChoice.Length == 0 ? "the Xbox (app storage)" : "USB " + _destChoice);
+        }
+
+        private async Task BrowseAsync(string path)
+        {
+            BrowseList.Items.Clear();
+            _browseEntries = new List<UsbBrowser.Entry>();
+            try
+            {
+                if (path.Length == 0)
+                {
+                    _browseEntries.Add(new UsbBrowser.Entry { Path = AppStorageEntry, Label = "Xbox (app storage)" });
+                    var drives = await UsbBrowser.DrivesAsync();
+                    _browseEntries.AddRange(drives);
+                    BrowsePathText.Text = drives.Count == 0
+                        ? "No USB drive visible. Plug one in (exFAT or NTFS) and open Settings again."
+                        : "Choose the Xbox, or open a USB drive:";
+                }
+                else
+                {
+                    var subs = await UsbBrowser.SubfoldersAsync(path);
+                    if (subs == null)
+                    {
+                        BrowsePathText.Text = path + " is not available (USB drive unplugged?).";
+                        path = "";
+                        _browseEntries.Add(new UsbBrowser.Entry { Path = UpEntry, Label = ".. (drive list)" });
+                    }
+                    else
+                    {
+                        BrowsePathText.Text = "Folder: " + path;
+                        _browseEntries.Add(new UsbBrowser.Entry { Path = UpEntry, Label = ".. (up)" });
+                        _browseEntries.AddRange(subs);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                BrowsePathText.Text = "Cannot list the USB drives: " + ex.Message;
+            }
+            _browsePath = path;
+            foreach (var e in _browseEntries) BrowseList.Items.Add(e.Label);
+            UseFolderButton.IsEnabled = path.Length > 0;
+            CreateFolderButton.IsEnabled = path.Length > 0;
+        }
+
+        private async void BrowseList_ItemClick(object sender, ItemClickEventArgs e)
+        {
+            int i = BrowseList.Items.IndexOf(e.ClickedItem);
+            if (i < 0 || i >= _browseEntries.Count) return;
+            var entry = _browseEntries[i];
+            if (entry.Path == AppStorageEntry)
+            {
+                _destChoice = "";
+                ShowDestChoice();
+                return;
+            }
+            await BrowseAsync(entry.Path == UpEntry ? UsbBrowser.Parent(_browsePath) : entry.Path);
+        }
+
+        private void UseFolderButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_browsePath.Length == 0) return;
+            _destChoice = _browsePath;
+            ShowDestChoice();
+        }
+
+        private async void CreateFolderButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string created = await UsbBrowser.CreateFolderAsync(_browsePath, NewFolderBox.Text);
+                NewFolderBox.Text = "";
+                await BrowseAsync(created);
+            }
+            catch (Exception ex)
+            {
+                BrowsePathText.Text = "Could not create the folder: " + ex.Message;
+            }
         }
 
         private void NewPinButton_Click(object sender, RoutedEventArgs e)
@@ -710,6 +804,7 @@ namespace xISOBurn
                 { "WriteImage", WriteImageBox.IsChecked == true ? "true" : "false" },
                 { "DecryptCss", DecryptCssBox.IsChecked == true ? "true" : "false" },
                 { "DecryptBluray", DecryptBlurayBox.IsChecked == true ? "true" : "false" },
+                { "OutputFolder", _destChoice ?? "" },
                 { "SectorsPerRead", TagOf(SectorsPerReadBox, "32") },
                 { "TimeoutSeconds", TimeoutBox.Text },
                 { "SkipOnErrors", SkipBox.IsChecked == true ? "true" : "false" },
@@ -764,6 +859,19 @@ namespace xISOBurn
                     if (cfg == null) return RemoteReply.Refused(error);
                     string result = ApplySettings(cfg, "the web page (" + remote + ")");
                     StatusText.Text = result;
+                    return RemoteReply.Done(result);
+                }
+                case "dest":
+                {
+                    if (!SettingsButton.IsEnabled)
+                        return RemoteReply.Refused("The app is busy; the destination can be changed when it is idle.");
+                    string msg, path;
+                    form.TryGetValue("path", out path);
+                    var cfg = CopyConfig.Load(_folder, out msg);
+                    cfg.OutputFolder = (path ?? "").Trim();
+                    string result = ApplySettings(cfg, "the web page (" + remote + ")");
+                    _freeSpaceAt = DateTime.MinValue;
+                    StatusText.Text = "Destination: " + (cfg.OutputFolder.Length == 0 ? "the Xbox (app storage)" : "USB " + cfg.OutputFolder) + ". " + result;
                     return RemoteReply.Done(result);
                 }
                 default:

@@ -263,7 +263,7 @@ namespace xISOBurn.Core
                 bool first;
                 lock (_visitors) first = _visitors.Add(req.Remote);
                 if (first) _log.Info("Web: " + req.Remote + " opened the page.");
-                await HtmlAsync(output, 200, MainPage(), head);
+                await HtmlAsync(output, 200, await MainPageAsync(), head);
             }
             else if ((req.Method == "GET" || head) && req.Path.StartsWith("/files/"))
             {
@@ -273,6 +273,27 @@ namespace xISOBurn.Core
             {
                 string message = await ReceiveKeyFileAsync(req, input, Uri.UnescapeDataString(req.Path.Substring("/keys/".Length)));
                 await RespondAsync(output, 200, "OK", "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(message), false);
+            }
+            else if ((req.Method == "GET" || head) && req.Path == "/browse")
+            {
+                string path;
+                req.Query.TryGetValue("path", out path);
+                await HtmlAsync(output, 200, await BrowsePageAsync(path ?? "", null), head);
+            }
+            else if (req.Method == "POST" && req.Path == "/mkdir")
+            {
+                string path, name;
+                req.Form.TryGetValue("path", out path);
+                req.Form.TryGetValue("name", out name);
+                string error = null, created = null;
+                try { created = await UsbBrowser.CreateFolderAsync(path ?? "", name); }
+                catch (Exception ex) { error = ex.Message; }
+                if (created != null)
+                {
+                    _log.Info("Web: " + req.Remote + " created the folder " + created + ".");
+                    await RedirectAsync(output, "/browse?path=" + Uri.EscapeDataString(created), "");
+                }
+                else await HtmlAsync(output, 200, await BrowsePageAsync(path ?? "", error), false);
             }
             else if (req.Method == "POST" && req.Path == "/keys-delete")
             {
@@ -284,7 +305,7 @@ namespace xISOBurn.Core
             {
                 string name;
                 req.Form.TryGetValue("name", out name);
-                string message = Delete(name ?? "", req.Remote);
+                string message = await DeleteAsync(name ?? "", req.Remote);
                 if (message == null) await RedirectAsync(output, "/", "");
                 else await HtmlAsync(output, 200, Shell("<p>" + Enc(message) + "</p><p><a href=\"/\">Back</a></p>", false), false);
             }
@@ -355,15 +376,22 @@ namespace xISOBurn.Core
                 await RespondAsync(output, 404, "Not Found", "text/plain", Encoding.UTF8.GetBytes("not found"), head);
                 return;
             }
-            string path = Path.Combine(_folder, name);
-            if (!File.Exists(path))
+            // Logs stay in the app storage; the copies are where the destination setting says.
+            Stream opened;
+            if (ext == ".log")
+            {
+                string path = Path.Combine(_folder, name);
+                opened = File.Exists(path) ? new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16) : null;
+            }
+            else opened = await (await StoreAsync()).OpenReadAsync(name);
+            if (opened == null)
             {
                 await RespondAsync(output, 404, "Not Found", "text/plain", Encoding.UTF8.GetBytes("not found"), head);
                 return;
             }
 
             bool iso = ext == ".iso";
-            using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16))
+            using (var fs = opened)
             {
                 long length = fs.Length;
                 // The ISO keeps its full size from the start of a copy, so length identifies it well enough
@@ -524,29 +552,84 @@ namespace xISOBurn.Core
         }
 
         /// <summary>Deletes NAME.iso and its companion files. Returns null when done, or why it was refused.</summary>
-        private string Delete(string name, string remote)
+        private async Task<string> DeleteAsync(string name, string remote)
         {
             if (name.Length == 0 || name != Path.GetFileName(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
                 return "Invalid name.";
             if (LiveImages.Get(name + ".iso") != null)
                 return name + " is being copied right now. Pause the copy first (Pause / cancel).";
             int deleted = 0;
-            foreach (var ext in new[] { ".iso", ".map", ".sha256", ".map.old", ".map.tmp" })
+            var store = await StoreAsync();
+            foreach (var ext in new[] { ".iso", ".map", ".sha256", ".old.map", ".tmp.map", ".tmp.sha256" })
             {
-                string path = Path.Combine(_folder, name + ext);
-                if (File.Exists(path))
+                if (await store.ExistsAsync(name + ext))
                 {
-                    File.Delete(path);
+                    await store.DeleteAsync(name + ext);
                     deleted++;
                 }
             }
-            _log.Info("Web: " + remote + " deleted " + name + " (" + deleted + " file(s)) from the Xbox.");
+            _log.Info("Web: " + remote + " deleted " + name + " (" + deleted + " file(s)) from " + store.Description + ".");
             return null;
         }
 
         // ------------------------------------------------------------ pages
 
-        private string MainPage()
+        private Task<CopyStore> StoreAsync()
+        {
+            return CopyStore.OpenAsync(_settings().OutputFolder, _folder);
+        }
+
+        /// <summary>Folder browser for the destination: USB drives, their folders, and the app storage.</summary>
+        private async Task<string> BrowsePageAsync(string path, string error)
+        {
+            var sb = new StringBuilder();
+            string current = _settings().OutputFolder;
+            sb.Append("<h2>Destination of the copies</h2>");
+            sb.Append("<p>Now: <b>").Append(Enc(string.IsNullOrEmpty(current) ? "the Xbox (app storage)" : "USB " + current)).Append("</b></p>");
+            if (error != null) sb.Append("<p class=\"err\">").Append(Enc(error)).Append("</p>");
+            Func<string, string, string> choose = (value, label) =>
+                "<form method=\"post\" action=\"/action\" style=\"display:inline\"><input type=\"hidden\" name=\"do\" value=\"dest\">" +
+                "<input type=\"hidden\" name=\"path\" value=\"" + Enc(value) + "\"><button>" + Enc(label) + "</button></form>";
+            string failure = null;
+            try
+            {
+                if (path.Length == 0)
+                {
+                    sb.Append("<p>").Append(choose("", "Use the Xbox (app storage)")).Append("</p>");
+                    var drives = await UsbBrowser.DrivesAsync();
+                    sb.Append("<h3>USB drives</h3>");
+                    if (drives.Count == 0)
+                        sb.Append("<p class=\"dim\">No USB drive visible to the app. Plug one in (exFAT or NTFS; FAT32 cannot hold files of 4 GiB " +
+                                  "or more) and reload this page.</p>");
+                    sb.Append("<ul>");
+                    foreach (var d in drives)
+                        sb.Append("<li><a href=\"/browse?path=").Append(Uri.EscapeDataString(d.Path)).Append("\">").Append(Enc(d.Label)).Append("</a></li>");
+                    sb.Append("</ul>");
+                }
+                else
+                {
+                    var subs = await UsbBrowser.SubfoldersAsync(path);
+                    if (subs == null) throw new IOException("The folder " + path + " is not available (USB drive unplugged?).");
+                    string parent = UsbBrowser.Parent(path);
+                    sb.Append("<p><b>").Append(Enc(path)).Append("</b> &middot; <a href=\"/browse?path=").Append(Uri.EscapeDataString(parent))
+                      .Append("\">up</a></p>");
+                    sb.Append("<p>").Append(choose(path, "Use this folder")).Append("</p><ul>");
+                    foreach (var s in subs)
+                        sb.Append("<li><a href=\"/browse?path=").Append(Uri.EscapeDataString(s.Path)).Append("\">").Append(Enc(s.Label)).Append("</a></li>");
+                    if (subs.Count == 0) sb.Append("<li class=\"dim\">(no folders)</li>");
+                    sb.Append("</ul>");
+                    sb.Append("<form method=\"post\" action=\"/mkdir\"><input type=\"hidden\" name=\"path\" value=\"").Append(Enc(path))
+                      .Append("\">New folder here: <input name=\"name\" size=\"20\"> <button>Create</button></form>");
+                }
+            }
+            catch (Exception ex) { failure = ex.Message; }
+            if (failure != null)
+                sb.Append("<p class=\"err\">").Append(Enc(failure)).Append("</p><p><a href=\"/browse\">Back to the drive list</a></p>");
+            sb.Append("<p><a href=\"/\">Back</a></p>");
+            return Shell(sb.ToString(), false);
+        }
+
+        private async Task<string> MainPageAsync()
         {
             string status;
             try { status = _statusHtml(); }
@@ -554,9 +637,20 @@ namespace xISOBurn.Core
 
             var sb = new StringBuilder();
             sb.Append(status);
-            sb.Append("<h2>Copies on the Xbox</h2>");
-            var isos = new List<string>(Directory.GetFiles(_folder, "*.iso"));
-            isos.Sort(StringComparer.OrdinalIgnoreCase);
+            CopyStore store = null;
+            List<StoreEntry> isos;
+            try
+            {
+                store = await StoreAsync();
+                isos = await store.ListAsync(".iso");
+            }
+            catch (Exception ex)
+            {
+                isos = new List<StoreEntry>();
+                sb.Append("<p class=\"err\">" + Enc(ex.Message) + "</p>");
+            }
+            isos.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            sb.Insert(status.Length, "<h2>Copies on " + Enc(store != null ? store.Description : "the destination") + " <a href=\"/browse\" style=\"font-size:13px\">change destination</a></h2>");
             if (isos.Count == 0)
             {
                 sb.Append("<p class=\"dim\">None yet. Insert a disc on the Xbox and choose <b>Copy / resume</b>.</p>");
@@ -564,8 +658,8 @@ namespace xISOBurn.Core
             else
             {
                 sb.Append("<table><tr><th>Disc</th><th>Size</th><th>State</th><th>Download</th><th></th></tr>");
-                foreach (var path in isos)
-                    sb.Append(ImageRow(path));
+                foreach (var iso in isos)
+                    sb.Append(await ImageRowAsync(store, iso));
                 sb.Append("</table>");
                 sb.Append("<p class=\"dim\">Downloads can be resumed in the browser if the network drops. ISO links of a copy in " +
                           "progress follow the copy: the download waits for the sectors still being read. Unreadable sectors are zeros " +
@@ -666,13 +760,13 @@ namespace xISOBurn.Core
             }
         }
 
-        private string ImageRow(string isoPath)
+        private async Task<string> ImageRowAsync(CopyStore store, StoreEntry iso)
         {
-            string file = Path.GetFileName(isoPath);
-            string name = Path.GetFileNameWithoutExtension(isoPath);
-            long size = new FileInfo(isoPath).Length;
+            string file = iso.Name;
+            string name = Path.GetFileNameWithoutExtension(file);
+            long size = iso.Size;
             var live = LiveImages.Get(file);
-            string sha = ReadSha(Path.Combine(_folder, name + ".sha256"));
+            string sha = await ReadShaAsync(store, name + ".sha256");
             string state;
             if (live != null)
             {
@@ -682,7 +776,7 @@ namespace xISOBurn.Core
             }
             else
             {
-                string summary = ReadMapSummary(Path.Combine(_folder, name + ".map"));
+                string summary = await ReadMapSummaryAsync(store, name + ".map");
                 state = sha != null ? "<b class=\"ok\">Complete</b>" : "<b>Incomplete</b> (resume the copy on the Xbox)";
                 if (summary != null) state += "<br><span class=\"dim\">" + Enc(summary) + "</span>";
             }
@@ -692,7 +786,7 @@ namespace xISOBurn.Core
             var links = new StringBuilder();
             // data-dl: the page's script follows this download (see BusyOverlay).
             links.Append("<a data-dl=\"1\" href=\"/files/").Append(Uri.EscapeDataString(file)).Append("\">ISO</a>");
-            if (File.Exists(Path.Combine(_folder, name + ".map")))
+            if (await store.ExistsAsync(name + ".map"))
                 links.Append(" &middot; <a href=\"/files/").Append(enc).Append(".map\">map</a>");
             if (sha != null)
                 links.Append(" &middot; <a href=\"/files/").Append(enc).Append(".sha256\">sha256</a>");
@@ -706,25 +800,26 @@ namespace xISOBurn.Core
                    "</td><td>" + links + "</td><td>" + delete + "</td></tr>";
         }
 
-        private static string ReadSha(string path)
+        private static async Task<string> ReadShaAsync(CopyStore store, string name)
         {
             try
             {
-                if (!File.Exists(path)) return null;
-                string text = File.ReadAllText(path).Trim();
+                string text = await store.ReadTextAsync(name);
+                if (text == null) return null;
+                text = text.Trim();
                 int sp = text.IndexOf(' ');
                 return sp > 0 ? text.Substring(0, sp) : text;
             }
-            catch (IOException) { return null; }
+            catch (Exception) { return null; }
         }
 
         /// <summary>The "# summary:" header line of a map (written by SectorStateMap.ToText), without parsing the whole map.</summary>
-        private static string ReadMapSummary(string path)
+        private static async Task<string> ReadMapSummaryAsync(CopyStore store, string name)
         {
             try
             {
-                if (!File.Exists(path)) return null;
-                using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                var fs = await store.OpenReadAsync(name);
+                if (fs == null) return null;
                 using (var reader = new StreamReader(fs))
                 {
                     for (int i = 0; i < 15; i++)
@@ -735,7 +830,7 @@ namespace xISOBurn.Core
                     }
                 }
             }
-            catch (IOException) { }
+            catch (Exception) { }
             return null;
         }
 

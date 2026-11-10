@@ -28,7 +28,7 @@ namespace xISOBurn.Bluray
         private UdfReader _udf;
         private AacsSession _aacs;
 
-        private sealed class Stream
+        private sealed class StreamFile
         {
             public UdfFile File;
             public uint Clip;
@@ -40,10 +40,10 @@ namespace xISOBurn.Bluray
         private struct Run
         {
             public long Lba, Sectors, FileSector;
-            public Stream S;
+            public StreamFile S;
         }
 
-        private readonly List<Stream> _streams = new List<Stream>();
+        private readonly List<StreamFile> _streams = new List<StreamFile>();
         private readonly List<Run> _runs = new List<Run>(); // sorted by Lba
 
         public bool AacsReady { get; private set; }
@@ -108,7 +108,7 @@ namespace xISOBurn.Bluray
                 string name = Path.GetFileNameWithoutExtension(f.Path);
                 uint clip;
                 if (!uint.TryParse(name, out clip)) continue;
-                var s = new Stream { File = f, Clip = clip, Units = f.Size / UnitBytes };
+                var s = new StreamFile { File = f, Clip = clip, Units = f.Size / UnitBytes };
                 _streams.Add(s);
                 foreach (var e in f.Extents)
                 {
@@ -232,7 +232,7 @@ namespace xISOBurn.Bluray
             return -1;
         }
 
-        private static long LbaOfFileSector(Stream s, long fileSector)
+        private static long LbaOfFileSector(StreamFile s, long fileSector)
         {
             long off = fileSector * SectorSize;
             foreach (var e in s.File.Extents)
@@ -243,7 +243,7 @@ namespace xISOBurn.Bluray
 
         private struct UnitRef
         {
-            public Stream S;
+            public StreamFile S;
             public long Unit;
             public long[] Lbas; // the 3 sectors
         }
@@ -274,7 +274,7 @@ namespace xISOBurn.Bluray
         // ------------------------------------------------------------ decryption
 
         /// <summary>AACS + BD+ on one unit in buf[off..off+6144). Returns true if the unit is now plain.</summary>
-        private bool ProcessUnit(Stream s, long unit, byte[] buf, int off)
+        private bool ProcessUnit(StreamFile s, long unit, byte[] buf, int off)
         {
             if (AacsReady && AacsSession.IsEncrypted(buf, off))
             {
@@ -328,7 +328,7 @@ namespace xISOBurn.Bluray
         /// is completed from the image when its other sectors are already there (map says Ok): the
         /// buffer part is fixed in place and the image part is written back here.
         /// </summary>
-        public void ProcessRead(long lba, byte[] buf, int count, SectorStateMap map, FileStream image)
+        public void ProcessRead(long lba, byte[] buf, int count, SectorStateMap map, System.IO.Stream image)
         {
             if (!Active || _runs.Count == 0) return;
             long end = lba + count;
@@ -379,7 +379,7 @@ namespace xISOBurn.Bluray
             }
         }
 
-        private static void ReadImage(FileStream image, long lba, byte[] dst, int off)
+        private static void ReadImage(System.IO.Stream image, long lba, byte[] dst, int off)
         {
             image.Seek(lba * SectorSize, SeekOrigin.Begin);
             int got = 0;
@@ -420,7 +420,7 @@ namespace xISOBurn.Bluray
         /// Resumed copy: decrypts and patches, in the image file, every complete unit that is still
         /// encrypted (or not patched yet: the BD+ patches can be applied again safely).
         /// </summary>
-        public async Task<long> ImagePassAsync(FileStream image, SectorStateMap map, Action<long> progress, CancellationToken ct)
+        public async Task<long> ImagePassAsync(System.IO.Stream image, SectorStateMap map, Action<long> progress, CancellationToken ct)
         {
             long changed = 0;
             var unit = new byte[UnitBytes];
