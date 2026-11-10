@@ -132,9 +132,10 @@ namespace xISOBurn.Bluray
                 }
                 else if (type == 2)
                 {
+                    // Entity identifier at p+4: flags, then 23 characters ("*UDF Metadata Partition").
                     string ident = Encoding.ASCII.GetString(lvd, p + 5, 23).TrimEnd('\0');
                     map.PartitionNumber = Bytes.LE16(lvd, p + 38);
-                    if (ident.StartsWith("UDF Metadata Partition"))
+                    if (ident.Contains("UDF Metadata Partition"))
                         map.MetadataFileLbn = Bytes.LE32(lvd, p + 40);
                     else
                         map.Type = 0; // virtual / sparable: not used on BD-ROM
@@ -168,7 +169,15 @@ namespace xISOBurn.Bluray
             }
 
             var fsd = await ReadBlocksAsync(ToLba(_fsdPartition, _fsdLbn), 1);
-            if (fsd == null || Tag(fsd, 0) != 256) return "no file set descriptor";
+            if (fsd == null || Tag(fsd, 0) != 256)
+            {
+                var maps = new StringBuilder();
+                foreach (var m in _maps)
+                    maps.Append(" [type " + m.Type + ", partition " + m.PartitionNumber +
+                                (m.Type == 2 ? ", metadata file at " + m.MetadataFileLbn + ", " + (m.MetadataExtents != null ? m.MetadataExtents.Count : 0) + " extent(s)" : "") + "]");
+                return "no file set descriptor (at partition reference " + _fsdPartition + ", block " + _fsdLbn +
+                       "; partition maps:" + maps + ")";
+            }
             long rootLbn = Bytes.LE32(fsd, 400 + 4);
             int rootPart = Bytes.LE16(fsd, 400 + 8);
             await WalkAsync("", rootPart, rootLbn, 0);

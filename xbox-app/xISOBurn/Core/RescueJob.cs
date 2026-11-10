@@ -415,7 +415,21 @@ namespace xISOBurn.Core
             {
                 // Reserve the full size up front: if space runs out, fail now and not hours later.
                 // Sectors never written stay zero, which is exactly what the image must hold for them.
-                _image.SetLength(total * SectorSize);
+                bool wasEmpty = _image.Length == 0;
+                try
+                {
+                    _image.SetLength(total * SectorSize);
+                }
+                catch (IOException ex)
+                {
+                    if (ex.HResult != unchecked((int)0x80070070)) throw; // ERROR_DISK_FULL
+                    _image.Dispose();
+                    _image = null;
+                    if (wasEmpty) { try { File.Delete(_imagePath); } catch (Exception) { } }
+                    throw new IOException("Not enough space on the Xbox for the image: it needs " + DiscProbe.FormatSize(total) +
+                                          ". Free space on the console (delete other copies or apps), or copy part of the disc " +
+                                          "(StartSector / SectorLimit in the settings).", ex);
+                }
             }
             _log.Info("Image: " + _imagePath + " (" + DiscProbe.FormatSize(total) + ")");
         }
