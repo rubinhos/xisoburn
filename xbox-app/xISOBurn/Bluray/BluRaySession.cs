@@ -49,6 +49,50 @@ namespace xISOBurn.Bluray
         public bool AacsReady { get; private set; }
         public bool BdplusReady { get; private set; }
         public long UnitsDecrypted, UnitsFailed, PatchesApplied;
+
+        /// <summary>
+        /// "Mark the image as decrypted": rename AACS to AACX (and BDSVM to BDSVX when BD+ was applied) in the
+        /// image's directory, main and mirror metadata, so players that see those folders (libbluray: VLC,
+        /// Kodi...) treat the disc as unprotected. Set before StartAsync.
+        /// </summary>
+        public bool MarkDecrypted;
+
+        private sealed class Rename
+        {
+            public long Lba;
+            public UdfDirEntry Entry;
+            public string From, To;
+        }
+
+        private readonly List<Rename> _renames = new List<Rename>();
+        public int RenamesApplied;
+
+        private void PlanRename(string from, string to)
+        {
+            UdfDirEntry e = null;
+            foreach (var x in _udf.Entries)
+                if (x.IsDirectory && string.Equals(x.Path, from, StringComparison.Ordinal)) e = x;
+            if (e == null || e.Lba < 0 || e.Offset + e.Length > SectorSize)
+            {
+                Log("Blu-ray: cannot mark " + from + " as decrypted (its directory entry is not in one sector of the image).");
+                return;
+            }
+            _renames.Add(new Rename { Lba = e.Lba, Entry = e, From = from, To = to });
+            long mirror = _udf.MirrorLba(e.Lba);
+            if (mirror >= 0 && mirror != e.Lba) _renames.Add(new Rename { Lba = mirror, Entry = e, From = from, To = to });
+            Log("Blu-ray: the image will have " + from + " renamed to " + to + " (sector " + e.Lba +
+                (mirror >= 0 && mirror != e.Lba ? ", mirror " + mirror : "") + "), so players treat it as an unprotected disc.");
+        }
+
+        /// <summary>Applies the planned renames to the sectors in buf (count sectors starting at lba).</summary>
+        private void ApplyRenames(long lba, byte[] buf, int count)
+        {
+            foreach (var r in _renames)
+            {
+                if (r.Lba < lba || r.Lba >= lba + count) continue;
+                if (UdfReader.RenameEntry(buf, (int)(r.Lba - lba) * SectorSize + r.Entry.Offset, r.Entry, r.From, r.To)) RenamesApplied++;
+            }
+        }
         private bool _failureLogged;
 
         /// <summary>The keys folder: KEYDB.cfg etc. in it, BD+ player files in bdplus/vm0.</summary>
@@ -152,6 +196,11 @@ namespace xISOBurn.Bluray
             Log("AACS: ready; the stream files are decrypted while copying.");
 
             await StartBdplusAsync(ct);
+            if (MarkDecrypted)
+            {
+                PlanRename("AACS", "AACX");
+                if (BdplusReady) PlanRename("BDSVM", "BDSVX");
+            }
             return true;
         }
 
@@ -330,6 +379,7 @@ namespace xISOBurn.Bluray
         /// </summary>
         public void ProcessRead(long lba, byte[] buf, int count, SectorStateMap map, System.IO.Stream image)
         {
+            if (_renames.Count > 0) ApplyRenames(lba, buf, count);
             if (!Active || _runs.Count == 0) return;
             long end = lba + count;
             var done = new HashSet<long>();
@@ -423,6 +473,18 @@ namespace xISOBurn.Bluray
         public async Task<long> ImagePassAsync(System.IO.Stream image, SectorStateMap map, Action<long> progress, CancellationToken ct)
         {
             long changed = 0;
+            // Directory sectors read in an earlier run, before the option was on.
+            var sector = new byte[SectorSize];
+            foreach (var r in _renames)
+            {
+                if (map.Get(r.Lba) != SectorState.Ok) continue;
+                ReadImage(image, r.Lba, sector, 0);
+                int applied = RenamesApplied;
+                ApplyRenames(r.Lba, sector, 1);
+                if (RenamesApplied == applied) continue;
+                image.Seek(r.Lba * SectorSize, System.IO.SeekOrigin.Begin);
+                image.Write(sector, 0, SectorSize);
+            }
             var unit = new byte[UnitBytes];
             var before = new byte[UnitBytes];
             foreach (var s in _streams)

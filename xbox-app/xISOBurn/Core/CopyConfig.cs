@@ -60,6 +60,8 @@ namespace xISOBurn.Core
         /// (keys folder). false = copy the stream files as the drive returns them (encrypted).
         /// </summary>
         public bool DecryptBluray = true;
+        /// <summary>Blu-ray: rename AACS (and BDSVM) in the image so libbluray players (VLC, Kodi) open it without keys.</summary>
+        public bool MarkBlurayDecrypted = false;
         /// <summary>
         /// Where the copies go: "" = the app storage on the Xbox, or a folder on a USB drive ("E:\copies"). Chosen
         /// with the folder browser in Settings or on the web page.
@@ -104,6 +106,7 @@ namespace xISOBurn.Core
             cfg.WriteImage = flag("WriteImage");
             cfg.DecryptCss = flag("DecryptCss");
             cfg.DecryptBluray = flag("DecryptBluray");
+            cfg.MarkBlurayDecrypted = flag("MarkBlurayDecrypted");
             if (f.ContainsKey("OutputFolder")) cfg.OutputFolder = get("OutputFolder");
             cfg.SkipOnErrors = flag("SkipOnErrors");
             cfg.KeepAwake = flag("KeepAwake");
@@ -173,6 +176,7 @@ namespace xISOBurn.Core
                 cfg.OutputName = o.GetNamedString("OutputName", cfg.OutputName);
                 cfg.DecryptCss = o.GetNamedBoolean("DecryptCss", cfg.DecryptCss);
                 cfg.DecryptBluray = o.GetNamedBoolean("DecryptBluray", cfg.DecryptBluray);
+                cfg.MarkBlurayDecrypted = o.GetNamedBoolean("MarkBlurayDecrypted", cfg.MarkBlurayDecrypted);
                 cfg.OutputFolder = o.GetNamedString("OutputFolder", cfg.OutputFolder);
                 cfg.WebPort = (int)o.GetNamedNumber("WebPort", cfg.WebPort);
                 cfg.WebPinRequired = o.GetNamedBoolean("WebPinRequired", cfg.WebPinRequired);
@@ -232,6 +236,7 @@ namespace xISOBurn.Core
             sb.Append("  \"OutputName\": ").Append(JsonValue.CreateStringValue(OutputName ?? "").Stringify()).Append(",\n");
             sb.Append("  \"DecryptCss\": ").Append(DecryptCss ? "true" : "false").Append(",\n");
             sb.Append("  \"DecryptBluray\": ").Append(DecryptBluray ? "true" : "false").Append(",\n");
+            sb.Append("  \"MarkBlurayDecrypted\": ").Append(MarkBlurayDecrypted ? "true" : "false").Append(",\n");
             sb.Append("  \"OutputFolder\": ").Append(JsonValue.CreateStringValue(OutputFolder ?? "").Stringify()).Append(",\n");
             sb.Append("  \"WebPort\": ").Append(WebPort.ToString(inv)).Append(",\n");
             sb.Append("  \"WebPinRequired\": ").Append(WebPinRequired ? "true" : "false").Append(",\n");
@@ -250,7 +255,7 @@ namespace xISOBurn.Core
                    " | range " + StartSector + "+" + (SectorLimit > 0 ? SectorLimit.ToString() : "end") +
                    " | write image: " + (WriteImage ? "yes" : "no") +
                    " | decrypt CSS: " + (DecryptCss ? "yes" : "no") +
-                   " | decrypt Blu-ray: " + (DecryptBluray ? "yes" : "no") +
+                   " | decrypt Blu-ray: " + (DecryptBluray ? (MarkBlurayDecrypted ? "yes, marked" : "yes") : "no") +
                    " | destination: " + (string.IsNullOrEmpty(OutputFolder) ? "Xbox" : "USB " + OutputFolder) +
                    " | web port " + WebPort + (WebPinRequired ? " with PIN" : " without PIN") +
                    " | keep awake: " + (KeepAwake ? "yes" : "no");

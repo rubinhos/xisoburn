@@ -483,7 +483,7 @@ namespace xISOBurn
                 SetBusy(true, true);
                 StatusText.Text = "Copying to the Xbox" +
                                   (_probe.Cpst == 1 && cfg.DecryptCss ? " (CSS disc: decrypting the video)" : "") +
-                                  (_probe.Aacs && cfg.DecryptBluray ? " (AACS disc: setting up the keys, see the log)" : "") +
+                                  (_probe.Aacs && cfg.DecryptBluray ? " (AACS disc: decrypting with the uploaded keys, see the log)" : "") +
                                   "... do not leave the app. B pauses (progress is kept). " +
                                   "The download can already start on the web page.";
                 Bar.Value = 0;
@@ -629,6 +629,7 @@ namespace xISOBurn
             WriteImageBox.IsChecked = cfg.WriteImage;
             DecryptCssBox.IsChecked = cfg.DecryptCss;
             DecryptBlurayBox.IsChecked = cfg.DecryptBluray;
+            MarkDecryptedBox.IsChecked = cfg.MarkBlurayDecrypted;
             _destChoice = cfg.OutputFolder ?? "";
             ShowDestChoice();
             var ignored = BrowseAsync(_destChoice);
@@ -804,6 +805,7 @@ namespace xISOBurn
                 { "WriteImage", WriteImageBox.IsChecked == true ? "true" : "false" },
                 { "DecryptCss", DecryptCssBox.IsChecked == true ? "true" : "false" },
                 { "DecryptBluray", DecryptBlurayBox.IsChecked == true ? "true" : "false" },
+                { "MarkBlurayDecrypted", MarkDecryptedBox.IsChecked == true ? "true" : "false" },
                 { "OutputFolder", _destChoice ?? "" },
                 { "SectorsPerRead", TagOf(SectorsPerReadBox, "32") },
                 { "TimeoutSeconds", TimeoutBox.Text },

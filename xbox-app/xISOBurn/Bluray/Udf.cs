@@ -29,6 +29,17 @@ namespace xISOBurn.Bluray
         public byte[] Embedded;   // data stored inside the file entry, if any
     }
 
+    /// <summary>A file identifier descriptor: the directory entry of a file or folder.</summary>
+    internal sealed class UdfDirEntry
+    {
+        public string Path;
+        public bool IsDirectory;
+        public long Lba;          // sector where the descriptor starts; -1 if the directory is embedded
+        public int Offset;        // byte offset of the descriptor in that sector
+        public int Length;        // descriptor length (padded to 4 bytes)
+        public int NameOffset, NameLength; // file identifier, relative to the descriptor start
+    }
+
     /// <summary>Reads 'count' sectors at 'lba' into buf[0..]; false on a read error.</summary>
     internal delegate Task<bool> SectorReader(long lba, int count, byte[] buf);
 
@@ -49,6 +60,8 @@ namespace xISOBurn.Bluray
             public int PartitionNumber;
             public long MetadataFileLbn;
             public List<UdfExtent> MetadataExtents; // metadata partition block -> physical lbn
+            public long MirrorFileLbn;
+            public List<UdfExtent> MirrorExtents;   // same, for the metadata mirror file
         }
 
         private readonly List<Partition> _partitions = new List<Partition>();
@@ -58,6 +71,28 @@ namespace xISOBurn.Bluray
 
         public string VolumeId { get; private set; }
         public readonly List<UdfFile> Files = new List<UdfFile>();
+        /// <summary>Every file identifier descriptor found, with its place on the disc (main metadata copy).</summary>
+        public readonly List<UdfDirEntry> Entries = new List<UdfDirEntry>();
+
+        /// <summary>CRC of ECMA-167 7.2.6 (CRC-ITU-T, x^16 + x^12 + x^5 + 1, initial value 0).</summary>
+        public static ushort Crc(byte[] b, int offset, int length)
+        {
+            int crc = 0;
+            for (int i = 0; i < length; i++)
+            {
+                crc ^= b[offset + i] << 8;
+                for (int k = 0; k < 8; k++) crc = (crc & 0x8000) != 0 ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+            }
+            return (ushort)crc;
+        }
+
+        /// <summary>Tag checksum: sum of the 16 tag bytes except byte 4, modulo 256.</summary>
+        public static byte TagChecksum(byte[] b, int offset)
+        {
+            int sum = 0;
+            for (int i = 0; i < 16; i++) if (i != 4) sum += b[offset + i];
+            return (byte)sum;
+        }
 
         public UdfReader(SectorReader read) { _read = read; }
 
@@ -136,7 +171,10 @@ namespace xISOBurn.Bluray
                     string ident = Encoding.ASCII.GetString(lvd, p + 5, 23).TrimEnd('\0');
                     map.PartitionNumber = Bytes.LE16(lvd, p + 38);
                     if (ident.Contains("UDF Metadata Partition"))
+                    {
                         map.MetadataFileLbn = Bytes.LE32(lvd, p + 40);
+                        map.MirrorFileLbn = Bytes.LE32(lvd, p + 44);
+                    }
                     else
                         map.Type = 0; // virtual / sparable: not used on BD-ROM
                 }
@@ -151,21 +189,11 @@ namespace xISOBurn.Bluray
                 if (m.Type != 2) continue;
                 int phys = PhysicalMapFor(m.PartitionNumber);
                 if (phys < 0) return "metadata partition without its physical partition";
-                var fe = await ReadBlocksAsync(PhysicalLba(phys, m.MetadataFileLbn), 1);
-                if (fe == null) return "cannot read the metadata file";
-                var mf = new UdfFile();
-                var ads = new List<Ad>();
-                if (!ParseFileEntry(fe, phys, mf, ads)) return "bad metadata file entry";
-                await ExpandAdsAsync(ads);
-                m.MetadataExtents = new List<UdfExtent>();
-                long blockOffset = 0;
-                foreach (var ad in ads)
-                {
-                    long blocks = (ad.Length + Block - 1) / Block;
-                    if (ad.Kind == 0)
-                        m.MetadataExtents.Add(new UdfExtent { Lba = ad.Lbn, Sectors = blocks, FileOffset = blockOffset });
-                    blockOffset += blocks;
-                }
+                m.MetadataExtents = await MetadataExtentsAsync(phys, m.MetadataFileLbn);
+                if (m.MetadataExtents == null) return "cannot read the metadata file";
+                // The mirror is optional for reading; it matters only when an entry is renamed.
+                if (m.MirrorFileLbn != m.MetadataFileLbn)
+                    m.MirrorExtents = await MetadataExtentsAsync(phys, m.MirrorFileLbn);
             }
 
             var fsd = await ReadBlocksAsync(ToLba(_fsdPartition, _fsdLbn), 1);
@@ -183,6 +211,71 @@ namespace xISOBurn.Bluray
             await WalkAsync("", rootPart, rootLbn, 0);
             Files.Sort((a, b) => string.CompareOrdinal(a.Path, b.Path));
             return null;
+        }
+
+        /// <summary>The extents of a metadata (or metadata mirror) file: metadata block -> physical block. Null on error.</summary>
+        private async Task<List<UdfExtent>> MetadataExtentsAsync(int phys, long lbn)
+        {
+            var fe = await ReadBlocksAsync(PhysicalLba(phys, lbn), 1);
+            if (fe == null) return null;
+            var ads = new List<Ad>();
+            if (!ParseFileEntry(fe, phys, new UdfFile(), ads)) return null;
+            await ExpandAdsAsync(ads);
+            var list = new List<UdfExtent>();
+            long blockOffset = 0;
+            foreach (var ad in ads)
+            {
+                long blocks = (ad.Length + Block - 1) / Block;
+                if (ad.Kind == 0) list.Add(new UdfExtent { Lba = ad.Lbn, Sectors = blocks, FileOffset = blockOffset });
+                blockOffset += blocks;
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// The sector of the metadata mirror that holds the same metadata block as disc sector 'lba' of the
+        /// main metadata file; -1 if 'lba' is not metadata or there is no separate mirror.
+        /// </summary>
+        public long MirrorLba(long lba)
+        {
+            foreach (var m in _maps)
+            {
+                if (m.Type != 2 || m.MetadataExtents == null || m.MirrorExtents == null) continue;
+                int phys = PhysicalMapFor(m.PartitionNumber);
+                foreach (var e in m.MetadataExtents)
+                {
+                    long start = PhysicalLba(phys, e.Lba);
+                    if (lba < start || lba >= start + e.Sectors) continue;
+                    long block = e.FileOffset + (lba - start);
+                    foreach (var me in m.MirrorExtents)
+                        if (block >= me.FileOffset && block < me.FileOffset + me.Sectors)
+                            return PhysicalLba(phys, me.Lba + (block - me.FileOffset));
+                    return -1;
+                }
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// Renames, in a sector buffer, the file identifier descriptor at buf[off] from 'from' to 'to'
+        /// (same length, 8-bit names), recomputing its CRC and tag checksum. Returns false, changing
+        /// nothing, unless the descriptor is valid and has the name 'from'.
+        /// </summary>
+        public static bool RenameEntry(byte[] buf, int off, UdfDirEntry e, string from, string to)
+        {
+            if (from.Length != to.Length || e.NameLength != from.Length + 1) return false;
+            if (off < 0 || off + e.Length > buf.Length || Tag(buf, off) != 257) return false;
+            int crcLen = Bytes.LE16(buf, off + 10);
+            if (off + 16 + crcLen > buf.Length) return false;
+            if (Crc(buf, off + 16, crcLen) != Bytes.LE16(buf, off + 8) || TagChecksum(buf, off) != buf[off + 4]) return false;
+            int n = off + e.NameOffset;
+            if (buf[n] != 8 || Encoding.ASCII.GetString(buf, n + 1, from.Length) != from) return false;
+            for (int i = 0; i < to.Length; i++) buf[n + 1 + i] = (byte)to[i];
+            ushort crc = Crc(buf, off + 16, crcLen);
+            buf[off + 8] = (byte)crc;
+            buf[off + 9] = (byte)(crc >> 8);
+            buf[off + 4] = TagChecksum(buf, off);
+            return true;
         }
 
         private int PhysicalMapFor(int partitionNumber)
@@ -364,6 +457,22 @@ namespace xISOBurn.Bluray
                 {
                     string name = DName(data, nameStart, lfi);
                     string childPath = dirPath.Length == 0 ? name : dirPath + "/" + name;
+                    // Where this identifier descriptor is on the disc (to rename an entry in an image).
+                    long fidLba = -1;
+                    int fidOffset = 0;
+                    if (dir.Embedded == null)
+                        foreach (var e in dir.Extents)
+                            if (o >= e.FileOffset && o < e.FileOffset + e.Length)
+                            {
+                                fidLba = e.Lba + (o - e.FileOffset) / Block;
+                                fidOffset = (int)((o - e.FileOffset) % Block);
+                                break;
+                            }
+                    Entries.Add(new UdfDirEntry
+                    {
+                        Path = childPath, IsDirectory = (characteristics & 0x02) != 0,
+                        Lba = fidLba, Offset = fidOffset, Length = (38 + liu + lfi + 3) & ~3, NameOffset = 38 + liu, NameLength = lfi,
+                    });
                     if ((characteristics & 0x02) != 0)
                     {
                         await WalkAsync(childPath, childPart, childLbn, depth + 1);

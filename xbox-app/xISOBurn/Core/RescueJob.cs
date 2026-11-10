@@ -346,7 +346,8 @@ namespace xISOBurn.Core
             if (_bd != null)
                 _log.Info("Blu-ray this run: " + _bd.UnitsDecrypted.ToString("N0") + " AACS unit(s) decrypted" +
                           (_bd.UnitsFailed > 0 ? ", " + _bd.UnitsFailed.ToString("N0") + " could not be decrypted (copied as read)" : "") +
-                          (_bd.BdplusReady ? ", " + _bd.PatchesApplied.ToString("N0") + " BD+ patch(es) applied" : "") + ".");
+                          (_bd.BdplusReady ? ", " + _bd.PatchesApplied.ToString("N0") + " BD+ patch(es) applied" : "") +
+                          (_bd.MarkDecrypted ? ", " + _bd.RenamesApplied + " directory entr(y/ies) renamed to mark the image as decrypted" : "") + ".");
             if (_retried > 0)
                 _log.Info("Retries this run: " + _recovered + " of " + _retried + " sector(s) recovered.");
             _log.Info(result.Finished ? "Nothing left to try." : result.Cancelled ? "Cancelled; run again to resume." :
@@ -650,6 +651,7 @@ namespace xISOBurn.Core
                 return;
             }
             var session = new BluRaySession(_drive, _log, (uint)_cfg.TimeoutSeconds, BluRaySession.KeysFolder(_folder));
+            session.MarkDecrypted = _cfg.MarkBlurayDecrypted;
             bool ok;
             try { ok = await session.StartAsync(_ct); }
             catch (OperationCanceledException) { throw; }

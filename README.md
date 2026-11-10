@@ -17,11 +17,16 @@ You only install the Xbox app; the PC needs nothing.
 - **AACS / BD+ Blu-ray (experimental):** with key files you upload on the web page (**Blu-ray keys**:
   `KEYDB.cfg`, and for BD+ the libbdplus `vm0` player files or cached conversion tables), the app
   decrypts the `.m2ts` streams while copying and applies the BD+ fixups. The app ships no keys.
-  AACS 2 (UHD) discs only work with a VUK or unit keys in `KEYDB.cfg`.
+  AACS 2 (UHD) discs only work with a VUK or unit keys in `KEYDB.cfg`. Tested: a BD-50 with AACS 1,
+  keys from the MKB and the Volume ID read from the Xbox drive. The ISO plays in PowerDVD; for VLC and
+  Kodi turn on **Mark the image as decrypted**, which renames the `AACS` folder in the image (main and
+  mirror UDF metadata) so libbluray does not ask for keys.
+- **Copies on the Xbox or on a USB drive:** choose the destination in **Settings** (or **change
+  destination** on the web page). Blu-ray images need a USB drive in exFAT or NTFS: a 39 GiB image was
+  written as one file to a USB drive in Developer Mode.
 - **Download from the browser:** the copy reaches the PC over the local network. You can start the
   download while the copy is running, and resume it if the network drops. A PIN keeps others on the
-  network out. The network is needed because files on USB storage are limited to about 2 GB in
-  Developer Mode.
+  network out.
 - **Gamepad or browser:** every action and setting is on the Xbox screen and also on the web page,
   so the copy can be started, paused and set up from the PC.
 
