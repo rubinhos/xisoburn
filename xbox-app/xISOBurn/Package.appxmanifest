@@ -52,7 +52,7 @@
       </uap:VisualElements>
       <!--
         On removable drives a UWP app only sees files of the types it declares here (removableStorage
-        capability below): the copies' .iso/.map/.sha256 and the logs. Needed for USB storage.
+        capability below): the copies' .iso/.map/.sha256/.hashes and the logs. Needed for USB storage.
       -->
       <Extensions>
         <uap:Extension Category="windows.fileTypeAssociation">
@@ -62,6 +62,7 @@
               <uap:FileType>.iso</uap:FileType>
               <uap:FileType>.map</uap:FileType>
               <uap:FileType>.sha256</uap:FileType>
+              <uap:FileType>.hashes</uap:FileType>
               <uap:FileType>.log</uap:FileType>
             </uap:SupportedFileTypes>
           </uap:FileTypeAssociation>
