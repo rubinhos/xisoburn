@@ -309,6 +309,11 @@ namespace xISOBurn.Core
 
                 result.Finished = _map.Count(SectorState.Untried) == 0 && _map.Count(SectorState.Pending) == 0 &&
                                   (_map.RetryPassesDone >= _cfg.RetryPasses || _map.Count(SectorState.Bad) == 0);
+
+                // BD+ with a segment key table: the fixups are in the streams, so they are applied once
+                // the image is complete, in order, before the checksums.
+                if (result.Finished && _bd != null && _bd.NeedsStreamPass && _image != null)
+                    await BlurayStreamPassAsync();
             }
             catch (OperationCanceledException)
             {
@@ -722,6 +727,16 @@ namespace xISOBurn.Core
             BeginPhase("Decrypt pass: stream files already in the image", _bd.StreamSectors);
             long changed = await _bd.ImagePassAsync(_image, _map, n => { _phaseDone += n; Report(_phaseDone); }, _ct);
             _log.Info("Decrypt pass: " + changed.ToString("N0") + " aligned unit(s) in the image were decrypted or patched.");
+            EndPhase();
+        }
+
+        /// <summary>BD+ segment key table: the stream fixups, read from the clips of the finished image (local file only).</summary>
+        private async Task BlurayStreamPassAsync()
+        {
+            BeginPhase("BD+ stream fixups (segment keys)", _bd.StreamSectors);
+            long changed = await _bd.StreamPassAsync(_image, _map, n => { _phaseDone += n; Report(_phaseDone); }, _ct);
+            _log.Info("BD+ stream fixups: " + _bd.StreamPatchesApplied.ToString("N0") + " patch(es) applied, " +
+                      changed.ToString("N0") + " aligned unit(s) changed in the image.");
             EndPhase();
         }
 

@@ -2,9 +2,10 @@
 // BD+ conversion table (fixup table). Port of libbdplus src/libbdplus/bdsvm/segment.c,
 // Copyright (C) 2008-2010 Accident, (C) 2013 VideoLAN, LGPL-2.1-or-later.
 //
-// Not ported: the streaming patcher (segment_patch / bdplus_fixup) and the "SEGK" segment-key tables
-// that need it. The copy reads sectors in any order, so instead every active entry of a decrypted table
-// becomes a fixed (file offset, 5 bytes) patch, applied to each aligned unit after AACS decryption.
+// The copy reads sectors in any order, so every active entry of a decrypted table becomes a fixed
+// (file offset, 5 bytes) patch, applied to each aligned unit after AACS decryption. Segment key
+// ("SEGK") tables have no entries of their own: their patches come from the streams, in a sequential
+// pass over the finished image (SegkStream.cs, the streaming part of segment_patch).
 
 using System;
 using System.Collections.Generic;
@@ -52,6 +53,64 @@ namespace xISOBurn.Bluray.Bdplus
     {
         public List<ConvSubtable> Tables = new List<ConvSubtable>();
         public uint CurrentTable = 0xFFFFFFFF, CurrentSegment = 0xFFFFFFFF;
+
+        /// <summary>
+        /// A segment key table (cached "SEGK" file, ct_segment_masks): each segment holds only its key
+        /// (16 bytes) and forensic mark mask (8 bytes); the entries come from the streams themselves
+        /// (descriptor 0x89), see SegkStream.
+        /// </summary>
+        public bool SegmentMasks;
+
+        /// <summary>segment_setMasks: parses a "SEGK0100" / "SEGK0200" file. Null if it has no records.</summary>
+        public static ConvTable ParseMasks(byte[] t, int len)
+        {
+            var ct = new ConvTable { SegmentMasks = true };
+            int recSize = 16;
+            int ptr = 0;
+            if (len >= 8 && t[0] == 'S' && t[1] == 'E' && t[2] == 'G' && t[3] == 'K')
+            {
+                string version = System.Text.Encoding.ASCII.GetString(t, 0, 8);
+                if (version == "SEGK0200") recSize += 8;      // with the FM_ID mask
+                else if (version != "SEGK0100") return null; // unsupported version
+                ptr = 8;
+            }
+            while (ptr + 4 + 2 + recSize <= len)
+            {
+                uint tableId = Bytes.BE32(t, ptr);
+                ptr += 4;
+                int subtableId = (t[ptr] << 8) | t[ptr + 1];
+                ptr += 2;
+
+                int table = ct.FindTableIndex(tableId);
+                if (table < 0)
+                {
+                    ct.Tables.Add(new ConvSubtable { TableId = tableId });
+                    table = ct.Tables.Count - 1;
+                }
+                var sub = ct.Tables[table];
+                if (sub.Segments.Length <= subtableId)
+                {
+                    var grown = new ConvSegment[subtableId + 1];
+                    Array.Copy(sub.Segments, grown, sub.Segments.Length);
+                    for (int i = sub.Segments.Length; i < grown.Length; i++) grown[i] = new ConvSegment();
+                    sub.Segments = grown;
+                }
+                var seg = sub.Segments[subtableId];
+                seg.Encrypted = true;
+                Buffer.BlockCopy(t, ptr, seg.Key, 0, 16);
+                ptr += 16;
+                if (recSize >= 16 + 8)
+                {
+                    Buffer.BlockCopy(t, ptr, seg.Mask, 0, 8);
+                    ptr += 8;
+                }
+                else
+                {
+                    for (int i = 0; i < 8; i++) seg.Mask[i] = 0xff; // not available: enable all
+                }
+            }
+            return ct.Tables.Count > 0 ? ct : null;
+        }
 
         private static bool IsInvalidEntry(ConvEntry e, ConvEntry prev)
         {
@@ -328,8 +387,9 @@ namespace xISOBurn.Bluray.Bdplus
             if (data.Length < 2 || data.Length > 0x400000) { error = "invalid size"; return null; }
             if (data.Length > 8 && data[0] == 'S' && data[1] == 'E' && data[2] == 'G' && data[3] == 'K' && data[4] == '0')
             {
-                error = "segment key (SEGK) tables are not supported by this port";
-                return null;
+                var masks = ParseMasks(data, data.Length);
+                if (masks == null) error = "segment key (SEGK) table of an unsupported version, or empty";
+                return masks;
             }
             var ct = Parse(data, data.Length);
             if (ct == null) { error = "cannot be parsed"; return null; }

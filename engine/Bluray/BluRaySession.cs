@@ -251,7 +251,87 @@ namespace xISOBurn.Bluray
                 List<BdplusPatch> p;
                 if (session.Patches.TryGetValue(s.Clip, out p)) s.Patches = p;
             }
+            _segk = session.StreamTable;
             BdplusReady = true;
+        }
+
+        // ------------------------------------------------------------ BD+ stream fixups (SEGK)
+
+        private ConvTable _segk;
+        public long StreamPatchesApplied;
+
+        /// <summary>The BD+ table is a segment key table: the fixups need StreamPassAsync over the finished image.</summary>
+        public bool NeedsStreamPass { get { return _segk != null; } }
+
+        /// <summary>
+        /// Segment key tables: reads each clip of the image in order, one aligned unit at a time (as a
+        /// player does), takes the patch entries from its descriptor 0x89 packets (SegkStream) and writes
+        /// the patched units back. Units not read yet are skipped (the stream state restarts after them).
+        /// Running it again gives the same result: the descriptors are not patched, so the patches repeat.
+        /// </summary>
+        public async Task<long> StreamPassAsync(System.IO.Stream image, SectorStateMap map, Action<long> progress, CancellationToken ct)
+        {
+            long changedUnits = 0;
+            if (_segk == null) return 0;
+            var unit = new byte[UnitBytes];
+            var before = new byte[UnitBytes];
+            foreach (var s in _streams)
+            {
+                var st = SegkStream.ForClip(_segk, s.Clip);
+                if (st == null)
+                {
+                    progress(s.Units * UnitSectors);
+                    continue;
+                }
+                if (st.MissingKeys > 0)
+                    Log("BD+: " + s.File.Path + ": " + st.MissingKeys + " of the segment keys are missing (often the first one; not fatal).");
+                st.Seek(0);
+                bool seekNeeded = false;
+                long clipPatches = 0;
+                for (long n = 0; n < s.Units; n++)
+                {
+                    if ((n & 255) == 0)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        progress(UnitSectors * 256);
+                        await Task.Yield();
+                    }
+                    var lbas = new long[UnitSectors];
+                    bool ok = true;
+                    for (int k = 0; k < UnitSectors && ok; k++)
+                    {
+                        lbas[k] = LbaOfFileSector(s, n * UnitSectors + k);
+                        ok = lbas[k] >= 0 && map.Get(lbas[k]) == SectorState.Ok;
+                    }
+                    if (!ok)
+                    {
+                        seekNeeded = true; // a gap: continue after it, as a player would after a seek
+                        continue;
+                    }
+                    if (seekNeeded)
+                    {
+                        st.Seek((ulong)(n * UnitBytes));
+                        seekNeeded = false;
+                    }
+                    for (int k = 0; k < UnitSectors; k++) ReadImage(image, lbas[k], unit, k * SectorSize);
+                    if (AacsSession.IsEncrypted(unit, 0)) { seekNeeded = true; continue; } // AACS failed on it
+                    Buffer.BlockCopy(unit, 0, before, 0, UnitBytes);
+                    int applied = st.Patch(unit, 0, UnitBytes);
+                    if (applied < 0) { seekNeeded = true; continue; }
+                    clipPatches += applied;
+                    if (Bytes.Equal(unit, 0, before, 0, UnitBytes)) continue;
+                    for (int k = 0; k < UnitSectors; k++)
+                    {
+                        image.Seek(lbas[k] * SectorSize, SeekOrigin.Begin);
+                        image.Write(unit, k * SectorSize, SectorSize);
+                    }
+                    changedUnits++;
+                }
+                StreamPatchesApplied += clipPatches;
+                Log("BD+: " + s.File.Path + ": " + st.Injected.ToString("N0") + " patch entr(y/ies) found in the stream, " +
+                    clipPatches.ToString("N0") + " patch(es) applied.");
+            }
+            return changedUnits;
         }
 
         /// <summary>BD+ file access (blocking; runs on the VM thread, with no copy in progress).</summary>

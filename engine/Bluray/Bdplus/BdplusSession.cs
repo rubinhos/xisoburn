@@ -18,6 +18,8 @@ namespace xISOBurn.Bluray.Bdplus
 
         /// <summary>Patches per clip number (00001.m2ts = 1).</summary>
         public readonly Dictionary<uint, List<BdplusPatch>> Patches = new Dictionary<uint, List<BdplusPatch>>();
+        /// <summary>A segment key (SEGK) table: the fixups come from the streams (SegkStream); null otherwise.</summary>
+        public ConvTable StreamTable { get; private set; }
         public string Source { get; private set; }
 
         public BdplusSession(string folder, Action<string> log)
@@ -89,6 +91,17 @@ namespace xISOBurn.Bluray.Bdplus
                 if (mk != null) SaveCached(mk, table);
             }
 
+            if (table.SegmentMasks)
+            {
+                // Segment keys only: the patches are in the clips themselves (SegkStream), applied in a
+                // pass over the finished image.
+                StreamTable = table;
+                int keyed = 0;
+                foreach (var c in clips) if (table.FindTableIndex(c) >= 0) keyed++;
+                _log("BD+: segment key table (SEGK) from the " + Source + ": " + table.Tables.Count + " table(s), " + keyed +
+                     " clip(s) of this disc. Their fixups are read from the streams in a pass after the copy.");
+                return true;
+            }
             foreach (var c in clips)
             {
                 var p = table.PatchesFor(c);
