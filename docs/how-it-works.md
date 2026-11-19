@@ -112,6 +112,7 @@ The port is in `engine/Css/`:
 | `VOLUME.iso` | Raw image, 2048 bytes per sector, full disc size. Unread sectors are zeros. On CSS discs the video is decrypted. |
 | `VOLUME.map` | State of every sector (see below). Resuming depends on it. |
 | `VOLUME.sha256` | SHA-256 of the image in `sha256sum` format, once nothing is left to try. |
+| `VOLUME.hashes` | Size, CRC32, MD5, SHA-1 and SHA-256 of the image (the checksums redump.org lists), computed in the same pass. |
 | `xisoburn-YYYYMMDD-HHMMSS.log` | Log of one app session. |
 | `config.json` | Settings. |
 
@@ -191,8 +192,8 @@ be changed while the app is busy or while the Settings dialog is open on the con
 |---------|--------------|
 | `GET /` | Main page (or the PIN page). Refreshes every 5 s. |
 | `POST /login` | `pin=NNNN`; sets a cookie. |
-| `GET /files/NAME.iso` (`.map`, `.sha256`, `.log`) | Download, with `Range` / `If-Range`. The ISO download follows a copy that is still running. |
-| `POST /delete` | `name=NAME`: deletes `NAME.iso`, `.map` and `.sha256`. Refused while that disc is being copied. |
+| `GET /files/NAME.iso` (`.map`, `.sha256`, `.hashes`, `.log`) | Download, with `Range` / `If-Range`. The ISO download follows a copy that is still running. |
+| `POST /delete` | `name=NAME`: deletes `NAME.iso`, `.map`, `.sha256` and `.hashes`. Refused while that disc is being copied. |
 | `POST /action` | `do=detect`, `copy`, `retry`, `scan` or `cancel`: presses that button of the app. Refused when the button is disabled on the console. |
 | `GET /settings`, `POST /settings` | The settings form, with the same fields and checks as the console's Settings dialog. |
 | `GET /favicon.png`, `/favicon.ico` | The app icon. |

@@ -88,6 +88,8 @@ and type the PIN. The PC and the Xbox must be on the same network.
   - **map** lists which sectors were read and which failed.
   - **sha256** is the hash of the finished image. Check your download with
     `Get-FileHash .\NAME.iso -Algorithm SHA256` in PowerShell and compare it with the page.
+  - **hashes** lists the size, CRC32, MD5, SHA-1 and SHA-256 of the finished image, the checksums
+    [redump.org](http://redump.org) lists for a disc, so you can check the copy against its entry.
   - **Delete** removes the copy from the Xbox to free space. It isn't offered while that copy runs.
 - **Log files** has the full log of each session.
 
@@ -143,7 +145,10 @@ The settings are stored in `config.json`. The details are in
 
 A raw image, 2048 bytes per sector, the same as a plain ISO. On CSS discs the video sectors are
 decrypted. Sectors that can't be read stay zeros, and the `.map` file next to the image lists them.
-The `.sha256` holds the hash of the finished image.
+The `.sha256` holds the hash of the finished image, and the `.hashes` file its size, CRC32, MD5,
+SHA-1 and SHA-256 (the checksums redump.org lists). On CSS discs the image is decrypted, so it only
+matches a Redump entry made from decrypted data; turn off **Decrypt CSS** to keep the sectors as on
+the disc.
 
 ## References
 

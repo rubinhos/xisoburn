@@ -74,6 +74,8 @@ namespace xISOBurn.Core
         public bool BlurayDecrypting;
         public long BlurayUnitsDecrypted, BlurayUnitsFailed;
         public string Sha256;
+        /// <summary>All the checksums of the finished image (also in NAME.hashes); null until computed.</summary>
+        public ImageHashes Hashes;
         public string ImagePath, MapPath;
         public TimeSpan Elapsed;
     }
@@ -297,8 +299,13 @@ namespace xISOBurn.Core
             {
                 try
                 {
-                    result.Sha256 = await HashImageAsync(total);
+                    var hashes = await HashImageAsync(total);
+                    result.Hashes = hashes;
+                    result.Sha256 = hashes.Sha256;
                     await _store.WriteTextAtomicAsync(baseName + ".sha256", result.Sha256 + " *" + _imageName + "\n");
+                    await _store.WriteTextAtomicAsync(baseName + ImageHashes.Extension, hashes.ToText(_imageName));
+                    _log.Info("Checksums (compare with redump.org): size " + hashes.Size.ToString("N0") + " bytes | " + hashes.Describe() +
+                              ". Saved in " + baseName + ImageHashes.Extension + ".");
                     SaveMap(result.Sha256);
                 }
                 catch (OperationCanceledException)
@@ -832,29 +839,50 @@ namespace xISOBurn.Core
 
         // ------------------------------------------------------------ hashing
 
-        private async Task<string> HashImageAsync(long total)
+        /// <summary>
+        /// Reads the finished image once and computes CRC32, MD5, SHA-1 (what redump.org lists) and
+        /// SHA-256. The four run in parallel on each chunk, so the phase costs about what SHA-256 alone did.
+        /// </summary>
+        private async Task<ImageHashes> HashImageAsync(long total)
         {
-            BeginPhase("Computing SHA-256 of the image", total);
+            BeginPhase("Computing the checksums of the image (CRC32, MD5, SHA-1, SHA-256)", total);
             // System.Security.Cryptography works on both platforms (UWP and .NET), unlike the WinRT
             // HashAlgorithmProvider the Xbox app used before.
-            var chunk = new byte[1 << 20];
-            using (var hash = SHA256.Create())
+            var chunk = new byte[4 << 20];
+            var crc = new Crc32();
+            using (var md5 = MD5.Create())
+            using (var sha1 = SHA1.Create())
+            using (var sha256 = SHA256.Create())
             using (var f = await _store.OpenReadAsync(_imageName))
             {
-                long remaining = total * SectorSize;
+                long size = total * SectorSize;
+                long remaining = size;
                 while (remaining > 0)
                 {
                     _ct.ThrowIfCancellationRequested();
                     int n = await f.ReadAsync(chunk, 0, (int)Math.Min(chunk.Length, remaining));
                     if (n <= 0) throw new IOException("image shorter than expected");
-                    hash.TransformBlock(chunk, 0, n, null, 0);
+                    Parallel.Invoke(
+                        () => crc.Append(chunk, 0, n),
+                        () => md5.TransformBlock(chunk, 0, n, null, 0),
+                        () => sha1.TransformBlock(chunk, 0, n, null, 0),
+                        () => sha256.TransformBlock(chunk, 0, n, null, 0));
                     remaining -= n;
-                    _phaseDone = (total * SectorSize - remaining) / SectorSize;
+                    _phaseDone = (size - remaining) / SectorSize;
                     Report(_phaseDone);
                 }
-                hash.TransformFinalBlock(chunk, 0, 0);
+                md5.TransformFinalBlock(chunk, 0, 0);
+                sha1.TransformFinalBlock(chunk, 0, 0);
+                sha256.TransformFinalBlock(chunk, 0, 0);
                 EndPhase();
-                return Bytes.Hex(hash.Hash);
+                return new ImageHashes
+                {
+                    Size = size,
+                    Crc32 = crc.Value.ToString("x8"),
+                    Md5 = Bytes.Hex(md5.Hash),
+                    Sha1 = Bytes.Hex(sha1.Hash),
+                    Sha256 = Bytes.Hex(sha256.Hash),
+                };
             }
         }
 

@@ -18,9 +18,9 @@ namespace xISOBurn.Core
     ///
     ///   GET  /                 main page (or the PIN page)
     ///   POST /login            pin=NNNN, sets a cookie
-    ///   GET  /files/NAME.ext   download (.iso .map .sha256 .log); Range requests supported, so the
+    ///   GET  /files/NAME.ext   download (.iso .map .sha256 .hashes .log); Range requests supported, so the
     ///                          browser can resume a download that was interrupted
-    ///   POST /delete           name=NAME, deletes NAME.iso/.map/.sha256 from the Xbox
+    ///   POST /delete           name=NAME, deletes NAME.iso/.map/.sha256/.hashes from the Xbox
     ///   POST /action           do=detect|copy|retry|scan|cancel: the app's buttons (remote control)
     ///   GET  /settings         the settings form; POST /settings saves it (same rules as on the console)
     ///   PUT  /keys/NAME        uploads a Blu-ray key file (KEYDB.cfg, BD+ player files, or a .zip of them)
@@ -54,7 +54,7 @@ namespace xISOBurn.Core
         private static readonly TimeSpan DownloadReportInterval = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan DownloadStallLimit = TimeSpan.FromSeconds(60);
         private const string PinCookie = "xisoburn_pin";
-        private static readonly string[] Downloadable = { ".iso", ".map", ".sha256", ".log" };
+        private static readonly string[] Downloadable = { ".iso", ".map", ".sha256", ".hashes", ".log" };
 
         private readonly Logger _log;
         private readonly string _folder;
@@ -560,7 +560,7 @@ namespace xISOBurn.Core
                 return name + " is being copied right now. Pause the copy first (Pause / cancel).";
             int deleted = 0;
             var store = await StoreAsync();
-            foreach (var ext in new[] { ".iso", ".map", ".sha256", ".old.map", ".tmp.map", ".tmp.sha256" })
+            foreach (var ext in new[] { ".iso", ".map", ".sha256", ".hashes", ".old.map", ".tmp.map", ".tmp.sha256", ".tmp.hashes" })
             {
                 if (await store.ExistsAsync(name + ext))
                 {
@@ -790,6 +790,9 @@ namespace xISOBurn.Core
                 links.Append(" &middot; <a href=\"/files/").Append(enc).Append(".map\">map</a>");
             if (sha != null)
                 links.Append(" &middot; <a href=\"/files/").Append(enc).Append(".sha256\">sha256</a>");
+            if (await store.ExistsAsync(name + ImageHashes.Extension))
+                links.Append(" &middot; <a href=\"/files/").Append(enc).Append(ImageHashes.Extension)
+                     .Append("\" title=\"Size, CRC32, MD5, SHA-1 and SHA-256, to compare with redump.org\">hashes</a>");
 
             string delete = live != null ? "" :
                 "<form method=\"post\" action=\"/delete\" data-wait=\"Deleting...\" onsubmit=\"return confirm('Delete " + Enc(name).Replace("'", "\\'") +
