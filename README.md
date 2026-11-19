@@ -31,6 +31,27 @@ You only install the Xbox app; the PC needs nothing.
 - **Gamepad or browser:** every action and setting is on the Xbox screen and also on the web page,
   so the copy can be started, paused and set up from the PC.
 
+There is also a Windows version, [xISOBurn for Windows](https://github.com/rubinhos/xisoburn-pc), for a
+PC drive (internal or USB), with the same copy engine.
+
+## Supported discs
+
+| Disc | Image | Tested |
+|------|-------|--------|
+| Data DVD, DVD-Video without protection | `.iso` | Yes |
+| CSS-protected DVD-Video | `.iso`, video decrypted | Yes (disc from the console's region) |
+| DVD-Audio (CPPM) | `.iso`, audio decrypted | Not yet |
+| Blu-ray, AACS 1 / BD+ (experimental) | `.iso`, streams decrypted with your key files | A BD-50 with AACS 1 |
+| Blu-ray, AACS 2 (UHD) | `.iso`, only with a VUK or unit keys in `KEYDB.cfg` | Not yet |
+| Data CD-ROM (ISO 9660) | `.iso` | Yes, a pressed PC game CD ([#7](https://github.com/rubinhos/xisoburn/issues/7), thanks @Chorss) |
+| Audio CD, mixed-mode CD | `.bin` + `.cue` (2352-byte sectors) | Not yet |
+
+A data CD is copied like a DVD, 2048 bytes per sector; the image opens in 7-Zip or mounts in Windows.
+In the test from #7, a 359 MiB CD took about 9 minutes (0.5-0.8 MiB/s, faster towards the outer
+edge), and its SHA-256 matched after the download. Audio and mixed-mode CDs are copied raw; see
+[how-it-works.md](docs/how-it-works.md#audio-and-mixed-mode-cds) for what that includes. If you try a
+disc type that says "Not yet", an issue with the log is very welcome.
+
 ## How to use
 
 ### 1. Install
