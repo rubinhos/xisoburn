@@ -112,7 +112,7 @@
                     <TextBlock Text="Copy" FontWeight="SemiBold" FontSize="15" Margin="0,8,0,0"/>
                     <TextBox x:Name="OutputNameBox" Header="File name (empty = the disc's volume label)"/>
                     <CheckBox x:Name="WriteImageBox" Content="Write the image (off = only test the drive and build the map)"/>
-                    <CheckBox x:Name="DecryptCssBox" Content="Decrypt CSS-protected DVD-Video while copying (off = copy it scrambled)"/>
+                    <CheckBox x:Name="DecryptCssBox" Content="Decrypt CSS (DVD-Video) and CPPM (DVD-Audio) while copying (off = copy them scrambled)"/>
                     <CheckBox x:Name="DecryptBlurayBox" Content="Decrypt Blu-ray (AACS, BD+) while copying, with the keys uploaded on the web page"/>
                     <CheckBox x:Name="MarkDecryptedBox" Content="Blu-ray: mark the image as decrypted (renames AACS, so VLC and Kodi open it; the ISO is then no longer identical to the disc)"/>
 

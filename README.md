@@ -114,7 +114,10 @@ burning programs open.
 On the PC, open the address shown at the top of the Xbox screen (for example `http://192.168.1.50:8770/`)
 and type the PIN. The PC and the Xbox must be on the same network.
 
-![The xISOBurn web page on the PC](docs/images/web-main.png)
+![The xISOBurn web page on the PC, with example copies](docs/images/web-main.png)
+
+<sub>The web page screenshots are made by the `web-screenshots` workflow: the app's real web server, run on
+example copies (`tools/web-screenshots`). The Xbox screen shots are taken on the console.</sub>
 
 - **Now on the Xbox** has the same buttons as the app, and the same disc, progress and status
   information. You can run everything from the PC. Only inserting the disc needs you at the console.
@@ -190,6 +193,7 @@ The settings are stored in `config.json`. The details are in
 | `xbox-app/xISOBurn/Core/` | Settings, copy store (app storage or USB drive), web server |
 | `xbox-app/xISOBurn/` | The app screen (`MainPage.xaml`), the package manifest and `Platform.cs` (the words the engine uses for the Xbox) |
 | `docs/` | Install guide, how it works, and the pictures in this README (`docs/images/`) |
+| `tools/web-screenshots/` | Runs the web server on example copies, for the web page screenshots (`.github/workflows/web-screenshots.yml`) |
 | `.github/workflows/build.yml` | Build and packaging on GitHub Actions |
 
 ## Output

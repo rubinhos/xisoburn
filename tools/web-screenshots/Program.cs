@@ -26,7 +26,9 @@ namespace xISOBurn.Tools
             if (Directory.Exists(folder)) Directory.Delete(folder, true);
             Directory.CreateDirectory(folder);
 
-            var cfg = new CopyConfig { WebPort = port, WebPinRequired = false, WebPin = "4821" };
+            // The settings file keeps the default (PIN asked), so the Settings page shows it as it is;
+            // only the server's own check is told not to ask, so the headless browser gets in.
+            var cfg = new CopyConfig { WebPort = port, WebPinRequired = true, WebPin = "4821" };
             cfg.Save(folder);
             var log = new Logger(folder, "xisoburn", null);
             log.Info("xISOBurn started.");
@@ -40,7 +42,13 @@ namespace xISOBurn.Tools
 
             Func<string, IDictionary<string, string>, string, Task<RemoteReply>> remote =
                 (action, form, who) => Task.FromResult(RemoteReply.Refused("This is an example page."));
-            var web = new WebServer(log, folder, StatusHtml, () => CopyConfig.Load(folder, out _), remote);
+            Func<CopyConfig> settings = () =>
+            {
+                var c = CopyConfig.Load(folder, out _);
+                c.WebPinRequired = false;
+                return c;
+            };
+            var web = new WebServer(log, folder, StatusHtml, settings, remote);
             if (!web.StartAsync(port).GetAwaiter().GetResult())
             {
                 Console.Error.WriteLine("Could not listen on port " + port);
