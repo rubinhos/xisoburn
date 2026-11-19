@@ -197,7 +197,7 @@ namespace xISOBurn.Core
             yield return media;
             yield return "Volume: " + (VolumeLabel.Length > 0 ? VolumeLabel : "(no ISO9660)") + (Udf ? " | UDF" : "");
             if (MmcProfiles.IsBluray(Profile) && Udf)
-                yield return "Protection: " + (Aacs ? "AACS" + (Bdplus ? " + BD+" : "") + " (decrypted while copying with the keys uploaded on the web page)" : "none") +
+                yield return "Protection: " + (Aacs ? "AACS" + (Bdplus ? " + BD+" : "") + " (decrypted while copying with the Blu-ray key files)" : "none") +
                              (Files.Count > 0 ? " | " + Files.Count + " files" : "");
             yield return "Size: " + TotalSectors.ToString("N0") + " sectors (" + FormatSize(TotalSectors) + ")" +
                          (Pfi != null && Pfi.NumberOfLayers > 1 ? " | layer change at LBA " + Pfi.Layer0Sectors.ToString("N0") : "");

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// The keys folder on the Xbox, filled from the web page:
+// The keys folder, filled by the app (web page on the Xbox, "Blu-ray keys" on the PC):
 //   keys/KEYDB.cfg, ProcessingDeviceKeysSimple.txt, HostKeyCertificate.txt   (AACS, libaacs names)
 //   keys/bdplus/vm0/...        BD+ player files (memory.map, aes_keys.bin, ecdsa_keys.txt, ...)
 //   keys/bdplus/convtab/*.bin  cached BD+ conversion tables, named after the media key

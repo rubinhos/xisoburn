@@ -49,7 +49,7 @@ namespace xISOBurn.Core
             var rr = await Read(reference, buf);
             _log.Info("Reference LBA " + reference + ": " + rr.Describe());
             if (!rr.Success)
-                _log.Info("WARNING: the reference block does not read now. The drive may already be in a bad state; power the console off fully and retry.");
+                _log.Info("WARNING: the reference block does not read now. The drive may already be in a bad state; " + Platform.ResetDriveHint + " and retry.");
 
             var points = new SortedSet<long>();
             for (int i = 0; i < Points; i++) points.Add(Align(total * i / Points));
@@ -105,7 +105,7 @@ namespace xISOBurn.Core
                     _log.Info("      recovery attempt " + attempt + ": " + again.Describe());
                 }
                 _log.Info(recovered ? "      drive recovered after " + sw.Elapsed.TotalSeconds.ToString("0") + " s"
-                                    : "      drive did NOT recover; power the console off fully before the next run");
+                                    : "      drive did NOT recover; " + Platform.ResetDriveHint + " before the next run");
                 if (!recovered) break;
             }
 

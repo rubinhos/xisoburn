@@ -133,10 +133,9 @@ The settings are stored in `config.json`. The details are in
 
 | Folder | Contents |
 |--------|----------|
+| `engine/` | The copy engine, shared with [xISOBurn for Windows](https://github.com/rubinhos/xisoburn-pc): disc detection, multi-pass copy, sector map, disc scan, CSS (libdvdcss port), AACS and BD+ (libaacs and libbdplus ports). See [engine/README.md](engine/README.md) |
 | `xbox-app/xISOBurn/Scsi/` | Drive access: `Windows.Devices.Custom` + SCSI pass-through |
-| `xbox-app/xISOBurn/Core/` | Disc detection, multi-pass copy, sector map, settings, web server, disc scan |
-| `xbox-app/xISOBurn/Css/` | CSS: C# port of libdvdcss (cipher, tables, drive commands, session) |
-| `xbox-app/xISOBurn/Util/` | Logger and byte helpers |
+| `xbox-app/xISOBurn/Core/` | Settings, copy store (app storage or USB drive), web server |
 | `docs/images/` | The pictures in this README |
 | `.github/workflows/build.yml` | Build and packaging on GitHub Actions |
 
@@ -225,7 +224,7 @@ xISOBurn is free software: you can redistribute it and/or modify it under the te
 of the License, or (at your option) any later version (`GPL-2.0-or-later`). It is distributed in the
 hope that it will be useful, but WITHOUT ANY WARRANTY; see the license for details.
 
-The license follows from the CSS code. The files in `xbox-app/xISOBurn/Css/` are derived from
+The license follows from the CSS code. The files in `engine/Css/` are derived from
 libdvdcss (Copyright VideoLAN, GPL-2.0-or-later) and keep its copyright and license notices.
 
 ## Disclaimer

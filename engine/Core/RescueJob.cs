@@ -2,12 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Windows.Security.Cryptography;
-using Windows.Security.Cryptography.Core;
+using System.Security.Cryptography;
 using xISOBurn.Bluray;
 using xISOBurn.Css;
 using xISOBurn.Scsi;
@@ -199,8 +197,8 @@ namespace xISOBurn.Core
                 _log.Info("STOPPED: " + ex.Message);
                 return result;
             }
-            _imagePath = _store.Description + ": " + _imageName;
-            _mapPath = _store.Description + ": " + _mapName;
+            _imagePath = _store.DisplayPath(_imageName);
+            _mapPath = _store.DisplayPath(_mapName);
             result.MapPath = _mapPath;
             result.ImagePath = _cfg.WriteImage ? _imagePath : null;
 
@@ -444,11 +442,11 @@ namespace xISOBurn.Core
                     try { free = await _store.FreeBytesAsync(); } catch (Exception) { }
                     string why = ex.HResult == unchecked((int)0x80070070)
                         ? "not enough space on " + _store.Description + " for the image: it needs " + DiscProbe.FormatSize(total) +
-                          ", " + CopyStore.FormatBytes(free) + " free. Choose another destination in Settings (a USB drive), free space, " +
+                          ", " + CopyStore.FormatBytes(free) + " free. " + Platform.OtherDestinationHint + ", free space, " +
                           "or copy part of the disc (StartSector / SectorLimit)."
                         : "the image of " + DiscProbe.FormatSize(total) + " cannot be created on " + _store.Description + " (" + free + " bytes free): 0x" +
                           ex.HResult.ToString("X8") + " " + ex.Message +
-                          (_store.IsUsb && need >= 4L * 1024 * 1024 * 1024 ? ". A FAT32 drive cannot hold files of 4 GiB or more: format it as exFAT or NTFS." : "");
+                          (_store.LimitedTo4GiB && need >= 4L * 1024 * 1024 * 1024 ? ". A FAT32 drive cannot hold files of 4 GiB or more: format it as exFAT or NTFS." : "");
                     throw new IOException(why, ex);
                 }
             }
@@ -837,8 +835,10 @@ namespace xISOBurn.Core
         private async Task<string> HashImageAsync(long total)
         {
             BeginPhase("Computing SHA-256 of the image", total);
-            var hash = HashAlgorithmProvider.OpenAlgorithm(HashAlgorithmNames.Sha256).CreateHash();
+            // System.Security.Cryptography works on both platforms (UWP and .NET), unlike the WinRT
+            // HashAlgorithmProvider the Xbox app used before.
             var chunk = new byte[1 << 20];
+            using (var hash = SHA256.Create())
             using (var f = await _store.OpenReadAsync(_imageName))
             {
                 long remaining = total * SectorSize;
@@ -847,14 +847,15 @@ namespace xISOBurn.Core
                     _ct.ThrowIfCancellationRequested();
                     int n = await f.ReadAsync(chunk, 0, (int)Math.Min(chunk.Length, remaining));
                     if (n <= 0) throw new IOException("image shorter than expected");
-                    hash.Append(chunk.AsBuffer(0, n));
+                    hash.TransformBlock(chunk, 0, n, null, 0);
                     remaining -= n;
                     _phaseDone = (total * SectorSize - remaining) / SectorSize;
                     Report(_phaseDone);
                 }
+                hash.TransformFinalBlock(chunk, 0, 0);
+                EndPhase();
+                return Bytes.Hex(hash.Hash);
             }
-            EndPhase();
-            return CryptographicBuffer.EncodeToHexString(hash.GetValueAndReset());
         }
 
         // ------------------------------------------------------------ progress

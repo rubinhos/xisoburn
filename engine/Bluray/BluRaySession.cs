@@ -110,8 +110,7 @@ namespace xISOBurn.Bluray
 
         private async Task<bool> ReadSectorsAsync(long lba, int count, byte[] buf)
         {
-            var r = await _drive.SendAsync(ScsiCommands.Read10((uint)lba, count), count * SectorSize, buf, 0, _timeout);
-            return r.Success && r.DataLength == count * SectorSize;
+            return await _drive.ReadSectorsAsync(lba, count, buf, _timeout);
         }
 
         /// <summary>Lists the UDF file system of a BD (for the file coverage report). Null if it cannot be read.</summary>
@@ -119,8 +118,7 @@ namespace xISOBurn.Bluray
         {
             var udf = new UdfReader(async (lba, count, buf) =>
             {
-                var r = await drive.SendAsync(ScsiCommands.Read10((uint)lba, count), count * SectorSize, buf, 0, timeout);
-                return r.Success && r.DataLength == count * SectorSize;
+                return await drive.ReadSectorsAsync(lba, count, buf, timeout);
             });
             string err = await udf.OpenAsync();
             if (err != null)

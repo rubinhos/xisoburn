@@ -101,6 +101,24 @@ namespace xISOBurn.Scsi
         }
 
         /// <summary>
+        /// READ(10) of 'count' sectors into buf, split into transfers of at most MaxTransferBytes.
+        /// True if every sector came back. (Part of what the shared engine expects of a drive.)
+        /// </summary>
+        public async Task<bool> ReadSectorsAsync(long lba, int count, byte[] buf, uint timeoutSeconds)
+        {
+            int perRead = Math.Max(1, MaxTransferBytes / SectorSize);
+            int done = 0;
+            while (done < count)
+            {
+                int n = Math.Min(perRead, count - done);
+                var r = await SendAsync(ScsiCommands.Read10((uint)(lba + done), n), n * SectorSize, buf, done * SectorSize, timeoutSeconds);
+                if (!r.Success || r.DataLength != n * SectorSize) return false;
+                done += n;
+            }
+            return true;
+        }
+
+        /// <summary>
         /// Sends a CDB. If dataLength > 0 it is a read command (DATA IN) and the data is copied to
         /// dest[destOffset..]. Never throws: errors come back in the ScsiResult.
         /// </summary>

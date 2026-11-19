@@ -56,5 +56,13 @@ namespace xISOBurn.Util
                 if (a[ao + i] != b[bo + i]) return false;
             return true;
         }
+
+        /// <summary>Lower-case hexadecimal, two digits per byte (as sha256sum prints it).</summary>
+        public static string Hex(byte[] b)
+        {
+            var sb = new System.Text.StringBuilder(b.Length * 2);
+            foreach (byte x in b) sb.Append(x.ToString("x2"));
+            return sb.ToString();
+        }
     }
 }
