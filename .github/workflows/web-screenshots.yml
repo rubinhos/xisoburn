@@ -29,7 +29,7 @@ jobs:
           dotnet build tools/web-screenshots/WebScreenshots.csproj -c Release -o harness
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Serve the example page
+      - name: Serve the example page and take the screenshots
         shell: pwsh
         run: |
           $p = Start-Process -FilePath "harness\WebScreenshots.exe" -ArgumentList "8770", "600" -PassThru `
@@ -42,9 +42,6 @@ jobs:
           }
           Get-Content harness.out
 
-      - name: Take the screenshots
-        shell: pwsh
-        run: |
           $edge = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
           New-Item -ItemType Directory -Force shots | Out-Null
           function Shot($url, $file, $height) {
