@@ -90,10 +90,17 @@ sectors. xISOBurn uses a C# port of [libdvdcss](https://code.videolan.org/videol
    and any sector still scrambled is decrypted in place. That covers images started by an older version
    or with `DecryptCss` off.
 
+**DVD-Audio (CPPM).** The audio of a DVD-Audio disc (the `.AOB` files in `AUDIO_TS`) is protected with
+CPPM, which uses the same drive authentication. After it, the album ID is taken from the disc key
+block (bytes 80-87), and the media key from `AUDIO_TS/DVDAUDIO.MKB`, processed with the player device
+keys of libdvdcss. Every encrypted audio block is then decrypted with the C2 cipher as it is copied,
+and its copy control byte is reset, as `dvdcpxm_read` does. A hybrid disc with a `VIDEO_TS` part gets
+CSS for the video and CPPM for the audio.
+
 What isn't supported:
 
 - A disc from a region the drive isn't set to, on a drive that enforces its region (RPC-2): the drive refuses the keys and the video sectors.
-- CPPM (DVD-Audio) and CPRM.
+- CPRM (recordable DVDs, such as DVD-VR camcorder discs).
 
 The port is in `engine/Css/`:
 
@@ -103,6 +110,7 @@ The port is in `engine/Css/`:
 | `CssCipher.cs` | `CryptKey`, `DecryptKey`, `DecryptDiscKey` + `player_keys`, `DecryptTitleKey`, `dvdcss_unscramble` (`src/css.c`) |
 | `CssDrive.cs` | the CDBs and response offsets of the raw-SCSI branches of `src/ioctl.c` |
 | `CssCrack.cs` | `investigate`, `CrackDiscKey`, `RecoverTitleKey`, `AttackPattern` (`src/css.c`) |
+| `CppmCipher.cs` | the C2 cipher, `process_mkb`, `cppm_decrypt_block`, `mpeg2_reset_cci` and the CPPM device keys (`src/libdvdcpxm.c`) |
 | `CssSession.cs` | `GetBusKey`, `dvdcss_disckey`, `dvdcss_titlekey`, `CrackTitleKey` (`src/css.c`) |
 
 ## Files (LocalState)

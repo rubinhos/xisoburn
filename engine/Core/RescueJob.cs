@@ -346,7 +346,8 @@ namespace xISOBurn.Core
                           " ms. That is the drive refusing the area (copy protection or region), not disc damage.");
             if (_css != null)
                 _log.Info("CSS this run: " + _css.Descrambled + " sector(s) decrypted" +
-                          (_css.LeftScrambled > 0 ? ", " + _css.LeftScrambled + " left scrambled (no title key)" : "") +
+                          (_css.CppmDecrypted > 0 ? " (" + _css.CppmDecrypted + " of them DVD-Audio, CPPM)" : "") +
+                          (_css.LeftScrambled > 0 ? ", " + _css.LeftScrambled + " left scrambled (no key)" : "") +
                           (_css.Reauthentications > 0 ? ", " + _css.Reauthentications + " re-authentication(s)" : "") + ".");
             if (_bd != null)
                 _log.Info("Blu-ray this run: " + _bd.UnitsDecrypted.ToString("N0") + " AACS unit(s) decrypted" +
@@ -687,7 +688,7 @@ namespace xISOBurn.Core
         {
             long total = 0;
             foreach (var k in _css.Keys) total += k.End - k.Start;
-            BeginPhase("Decrypt pass: VOB sectors already in the image", total);
+            BeginPhase("Decrypt pass: VOB / AOB sectors already in the image", total);
             const int Chunk = 64;
             var buf = new byte[Chunk * SectorSize];
             long fixedSectors = 0;

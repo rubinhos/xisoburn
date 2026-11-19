@@ -13,7 +13,8 @@ You only install the Xbox app; the PC needs nothing.
   SHA-256 is computed when nothing is left to read. When the PC's DVD drive fails on a disc
   (`MEDIUM ERROR / UNRECOVERED READ ERROR`), the Xbox drive becomes a second reader.
 - **CSS-protected DVD-Video:** the app authenticates with the drive and decrypts the video while
-  copying, so the ISO plays in any player. The disc has to be from the console's region.
+  copying, so the ISO plays in any player. The disc has to be from the console's region. DVD-Audio
+  discs (CPPM) are decrypted the same way.
 - **AACS / BD+ Blu-ray (experimental):** with key files you upload on the web page (**Blu-ray keys**:
   `KEYDB.cfg`, and for BD+ the libbdplus `vm0` player files or cached conversion tables), the app
   decrypts the `.m2ts` streams while copying and applies the BD+ fixups. The app ships no keys.
@@ -170,6 +171,8 @@ the disc.
   - `Css/CssCipher.cs`: `CryptKey`, `DecryptKey`, `DecryptDiscKey` with the player keys,
     `DecryptTitleKey` and `dvdcss_unscramble` from `src/css.c`, ported line by line;
   - `Css/CssCrack.cs`: the key attacks `CrackDiscKey`, `RecoverTitleKey` and `AttackPattern`;
+  - `Css/CppmCipher.cs`: CPPM for DVD-Audio (C2 cipher, media key block, block decryption) from
+    `src/libdvdcpxm.c`;
   - `Css/CssSession.cs`: the authentication sequence of `GetBusKey`, `dvdcss_disckey` and
     `dvdcss_titlekey` (`src/css.c`);
   - `Css/CssDrive.cs`: the CDBs and response offsets of the raw-SCSI branches of `src/ioctl.c`.
