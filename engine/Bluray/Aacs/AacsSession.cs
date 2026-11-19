@@ -102,7 +102,7 @@ namespace xISOBurn.Bluray.Aacs
                 {
                     Config = KeyDb.Load(_keyFolder, DiscId);
                     foreach (var n in Config.Notes) _log("AACS: " + n);
-                    if (Config.Empty) _log("AACS: no key files in the keys folder (KEYDB.cfg). Upload them from the web page.");
+                    if (Config.Empty) _log("AACS: no key files in the keys folder (KEYDB.cfg). " + Platform.AddKeysHint + ".");
                 }
                 catch (Exception ex)
                 {

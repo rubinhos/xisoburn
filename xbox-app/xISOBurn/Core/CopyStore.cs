@@ -39,6 +39,12 @@ namespace xISOBurn.Core
         public abstract Task<List<StoreEntry>> ListAsync(string extension);
         public abstract Task<long> FreeBytesAsync();         // -1 if unknown
 
+        /// <summary>The destination may be FAT32 (no files of 4 GiB or more): USB drives can be.</summary>
+        public bool LimitedTo4GiB { get { return IsUsb; } }
+
+        /// <summary>How a file of this store is shown in the log.</summary>
+        public string DisplayPath(string name) { return Description + ": " + name; }
+
         public async Task<bool> ExistsAsync(string name) { return await SizeAsync(name) >= 0; }
 
         public async Task<string> ReadTextAsync(string name)

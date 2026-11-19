@@ -92,7 +92,7 @@ What isn't supported:
 - A disc from a region the drive isn't set to. The drive refuses the keys.
 - CPPM (DVD-Audio) and CPRM.
 
-The port is in `xbox-app/xISOBurn/Css/`:
+The port is in `engine/Css/`:
 
 | File | Ported from libdvdcss |
 |------|-----------------------|
