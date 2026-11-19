@@ -25,9 +25,14 @@ namespace xISOBurn.Css
     /// sectors as the copy reads them. After authentication the drive also stops refusing the
     /// scrambled sectors, so the reads themselves succeed.
     ///
-    /// Only the "key" method of libdvdcss: the disc key is decrypted with the player keys. Discs whose
-    /// disc key none of the player keys open would need the title key attack (CrackTitleKey), which
-    /// is not ported; their video sectors are then copied scrambled, and the log says so.
+    /// The methods of libdvdcss, in its order of fallback:
+    ///   - "key": the disc key is decrypted with the player keys, then each title key read from the
+    ///     drive is decrypted with it;
+    ///   - "disc": if no player key opens the disc key, it is cracked from its hash (CrackDiscKey);
+    ///   - "title": if there is still no disc key, or the drive refuses a title key, the title key is
+    ///     recovered from the scrambled video itself (CrackTitleKey with AttackPattern). This reads the
+    ///     start of the VOB, so it needs a drive that serves the scrambled sectors (authenticated, or
+    ///     region-free).
     /// </summary>
     internal sealed class CssSession
     {
@@ -37,6 +42,13 @@ namespace xISOBurn.Css
         private readonly byte[] _busKey = new byte[5];
         private readonly byte[] _discKey = new byte[5];
         private int _agid;
+        private readonly OpticalDrive _drive;
+        private readonly uint _timeout;
+        /// <summary>The disc key is known (decrypted with a player key, or cracked).</summary>
+        private bool _haveDiscKey;
+
+        /// <summary>Title keys recovered from the video (method "title").</summary>
+        public int CrackedTitleKeys { get; private set; }
 
         /// <summary>Scrambled sectors that were left as they are (no key for them).</summary>
         public long LeftScrambled { get; private set; }
@@ -48,6 +60,8 @@ namespace xISOBurn.Css
         public CssSession(OpticalDrive drive, Logger log, uint timeoutSeconds)
         {
             _css = new CssDrive(drive, Math.Min(timeoutSeconds, 20u));
+            _drive = drive;
+            _timeout = Math.Min(timeoutSeconds, 20u);
             _log = log;
         }
 
@@ -60,8 +74,10 @@ namespace xISOBurn.Css
             _log.Section("CSS");
             await LogRegionsAsync();
 
-            if (!await AuthenticateAndReadDiscKeyAsync(true))
-                return false;
+            bool authenticated = await AuthenticateAndReadDiscKeyAsync(true);
+            if (!authenticated)
+                _log.Info("CSS: without authentication, trying to recover the title keys from the video itself " +
+                          "(only works if the drive serves the scrambled sectors anyway, e.g. a region-free drive).");
             ct.ThrowIfCancellationRequested();
 
             var vobs = new List<DiscFile>();
@@ -79,12 +95,19 @@ namespace xISOBurn.Css
             {
                 ct.ThrowIfCancellationRequested();
                 string set = TitleSet(f.Path);
-                byte[] key = await TitleKeyAsync((uint)f.Lba);
+                byte[] key = authenticated && _haveDiscKey ? await TitleKeyAsync((uint)f.Lba) : null;
                 if (key == null && previous != null && set == previousSet)
                 {
                     // VTS_xx_2..9.VOB belong to the same title as VTS_xx_1.VOB and share its key.
                     key = previous;
                     _log.Info("CSS: " + f.Path + ": using the key of the previous file of the same title set.");
+                }
+                if (key == null)
+                {
+                    // A refused title key can cost the authentication (ASF back to 0), and the scrambled
+                    // sectors are only served with it: authenticate again first, as libdvdcss does.
+                    if (authenticated && _haveDiscKey) await AuthenticateAndReadDiscKeyAsync(false);
+                    key = await CrackTitleKeyAsync(f, ct);
                 }
                 if (key != null && !Bytes.AllZero(key, 0, 5))
                 {
@@ -102,8 +125,11 @@ namespace xISOBurn.Css
                 previous = key;
                 previousSet = set;
             }
-            _log.Info("CSS: " + _keys.Count + " of " + vobs.Count + " VOB file(s) have a title key. The video is decrypted while copying.");
-            return true;
+            _log.Info("CSS: " + _keys.Count + " of " + vobs.Count + " VOB file(s) have a title key" +
+                      (CrackedTitleKeys > 0 ? " (" + CrackedTitleKeys + " recovered from the video)" : "") +
+                      ". The video is decrypted while copying.");
+            // Without authentication the session is only worth keeping if the video gave up some keys.
+            return authenticated || _keys.Count > 0;
         }
 
         /// <summary>
@@ -198,14 +224,98 @@ namespace xISOBurn.Css
             for (int i = 0; i < block.Length; i++)
                 block[i] ^= _busKey[4 - (i % 5)];
             int player = await Task.Run(() => CssCipher.DecryptDiscKey(block, _discKey));
-            if (player < 0)
+            if (player >= 0)
             {
-                _log.Info("CSS: none of the player keys decrypts the disc key; the title keys cannot be decrypted " +
-                          "(the title key attack of libdvdcss is not ported). The video will stay scrambled.");
-                return false;
+                _haveDiscKey = true;
+                _log.Info("CSS: drive authenticated; disc key decrypted with player key #" + player + ".");
+                return true;
             }
-            _log.Info("CSS: drive authenticated; disc key decrypted with player key #" + player + ".");
+
+            // Method "disc": crack the disc key from its hash (the first 5 bytes of the block).
+            _log.Info("CSS: drive authenticated, but none of the player keys decrypts the disc key; cracking it (this takes a moment)...");
+            var hash = new byte[5];
+            Buffer.BlockCopy(block, 0, hash, 0, 5);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            bool cracked = await Task.Run(() => CssCrack.CrackDiscKey(hash));
+            if (cracked)
+            {
+                Buffer.BlockCopy(hash, 0, _discKey, 0, 5);
+                _haveDiscKey = true;
+                _log.Info("CSS: disc key cracked in " + sw.Elapsed.TotalSeconds.ToString("0.0") + " s: " + CssCipher.KeyToString(_discKey) + ".");
+            }
+            else
+            {
+                _log.Info("CSS: the disc key could not be cracked; the title keys will be recovered from the video instead.");
+            }
             return true;
+        }
+
+        // ------------------------------------------------------------------ method "title"
+
+        /// <summary>Sectors read at most per VOB file while looking for a title key (256 MiB).</summary>
+        private const int MaxCrackSectors = 131072;
+        private const int CrackBlock = 16;
+
+        /// <summary>
+        /// CrackTitleKey: reads the VOB from its start and runs AttackPattern on each scrambled sector
+        /// until a title key comes out. Returns the key, all zeros if the file is not scrambled, or null.
+        /// </summary>
+        private async Task<byte[]> CrackTitleKeyAsync(DiscFile f, CancellationToken ct)
+        {
+            _log.Info("CSS: " + f.Path + ": recovering the title key from the video...");
+            var buf = new byte[CrackBlock * CssCipher.SectorSize];
+            var key = new byte[5];
+            long end = Math.Min(f.End, f.Lba + MaxCrackSectors);
+            long pos = f.Lba;
+            int reads = 0, encrypted = 0, tries = 0, readErrors = 0;
+            bool endOfTitle = false;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+
+            while (pos < end && !endOfTitle)
+            {
+                ct.ThrowIfCancellationRequested();
+                int n = (int)Math.Min(CrackBlock, end - pos);
+                if (!await _drive.ReadSectorsAsync(pos, n, buf, _timeout))
+                {
+                    // A damaged area, or the drive refuses the scrambled sectors (not authenticated).
+                    if (++readErrors >= 8)
+                    {
+                        _log.Info("CSS: " + f.Path + ": the drive refused " + readErrors + " reads; giving up on this file.");
+                        break;
+                    }
+                    pos += n;
+                    continue;
+                }
+                for (int s = 0; s < n; s++)
+                {
+                    int off = s * CssCipher.SectorSize;
+                    // Stop at a block that is not an MPEG pack (end of the stream).
+                    if (buf[off] != 0x00 || buf[off + 1] != 0x00 || buf[off + 2] != 0x01) { endOfTitle = true; break; }
+                    // PES_scrambling_control does not exist in a system header or padding / private stream 2.
+                    byte stream = buf[off + 0x11];
+                    if (CssCipher.IsScrambled(buf, off) && stream != 0xbb && stream != 0xbe && stream != 0xbf)
+                    {
+                        encrypted++;
+                        tries++;
+                        if (CssCrack.AttackPattern(buf, off, key))
+                        {
+                            CrackedTitleKeys++;
+                            _log.Info("CSS: " + f.Path + ": title key recovered from LBA " + (pos + s) + " after " +
+                                      (reads + s + 1) + " sector(s) (" + sw.Elapsed.TotalSeconds.ToString("0.0") + " s).");
+                            return key;
+                        }
+                    }
+                }
+                pos += n;
+                reads += n;
+                if (reads >= 2000 && encrypted == 0) break; // no scrambled sector: the file is in the clear
+            }
+
+            if (encrypted == 0 && reads > 0)
+                return new byte[5];
+            _log.Info("CSS: " + f.Path + ": no title key found in " + reads + " sector(s) (" + encrypted + " scrambled, " +
+                      tries + " attempt(s)).");
+            return null;
         }
 
         private async Task<byte[]> TitleKeyAsync(uint lba)
