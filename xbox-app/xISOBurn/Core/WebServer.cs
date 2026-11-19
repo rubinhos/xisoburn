@@ -898,7 +898,7 @@ namespace xISOBurn.Core
             b.Append("<h3>Copy</h3>");
             b.Append("<p>File name (empty = the disc's volume label)<br>").Append(text("OutputName", cfg.OutputName, "size=\"30\"")).Append("</p>");
             b.Append("<p>").Append(check("WriteImage", cfg.WriteImage)).Append("Write the image (off = only test the drive and build the map)</label></p>");
-            b.Append("<p>").Append(check("DecryptCss", cfg.DecryptCss)).Append("Decrypt CSS-protected DVD-Video while copying (off = copy it scrambled)</label></p>");
+            b.Append("<p>").Append(check("DecryptCss", cfg.DecryptCss)).Append("Decrypt CSS (DVD-Video) and CPPM (DVD-Audio) while copying (off = copy them scrambled)</label></p>");
             b.Append("<p>").Append(check("DecryptBluray", cfg.DecryptBluray)).Append("Decrypt Blu-ray (AACS, BD+) while copying, with the keys uploaded below (off = copy it encrypted)</label></p>");
             b.Append("<p>").Append(check("MarkBlurayDecrypted", cfg.MarkBlurayDecrypted)).Append("Blu-ray: mark the image as decrypted (renames the AACS folder so VLC and Kodi open it without keys; the ISO is then no longer identical to the disc)</label></p>");
 

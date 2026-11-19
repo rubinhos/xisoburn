@@ -113,6 +113,53 @@ The port is in `engine/Css/`:
 | `CppmCipher.cs` | the C2 cipher, `process_mkb`, `cppm_decrypt_block`, `mpeg2_reset_cci` and the CPPM device keys (`src/libdvdcpxm.c`) |
 | `CssSession.cs` | `GetBusKey`, `dvdcss_disckey`, `dvdcss_titlekey`, `CrackTitleKey` (`src/css.c`) |
 
+## Blu-ray (AACS and BD+)
+
+Blu-ray decryption needs key files that you provide; the app ships none. Upload them under **Blu-ray
+keys** on the web page (or **Blu-ray keys...** in the Windows app). They go to the `keys` folder:
+
+| File | Used for |
+|------|----------|
+| `KEYDB.cfg` | Per-disc entries (disc ID, media key, Volume ID, VUK, unit keys) and processing / device keys, in the libaacs format |
+| `ProcessingDeviceKeysSimple.txt`, `HostKeyCertificate.txt` | Optional extra keys and a host certificate, as libaacs reads them |
+| `bdplus/vm0/...` | The BD+ player files of libbdplus (`memory.map`, `aes_keys.bin`, `ecdsa_keys.txt`, ...) |
+| `bdplus/convtab/<media key>.bin` | Cached BD+ conversion tables (a full table, or a segment key `SEGK` table) |
+| a `.zip` of the above | Unpacked with the same rules |
+
+**AACS**, in libaacs's order:
+
+1. The disc ID is the SHA-1 of `AACS/Unit_Key_RO.inf`.
+2. The VUK (volume unique key) comes from the key cache, or is computed from the media key and the
+   Volume ID:
+   - the media key from the cache, from the disc's MKB with the processing / device keys, or from the
+     `KEYDB.cfg` entry;
+   - the Volume ID from the cache, from the drive (authenticated with a host certificate), or from the
+     `KEYDB.cfg` entry.
+
+   Failing that, the VUK or the unit keys of the `KEYDB.cfg` entry are used directly.
+3. With the unit keys, every 6144-byte aligned unit of `BDMV/STREAM/*.m2ts` is decrypted as it is
+   copied. If the disc and the drive use bus encryption, the read data key comes from the drive too.
+
+Keys found along the way are kept in `keys/aacs_cache.txt`, so the next copy of the same disc does
+not need them again.
+
+**BD+** (if the disc has `BDSVM/00000.svm`):
+
+- A cached conversion table named after the disc's media key is used if there is one.
+- Otherwise the disc's BD+ program runs in the DLX virtual machine (libbdplus port) with the `vm0`
+  player files, and the conversion table it produces is saved to `convtab` for next time.
+- A full table becomes fixed 5-byte patches, applied to each unit as it is copied.
+- A segment key (`SEGK`) table carries no patches of its own: they are hidden in the clips
+  (descriptor `0x89`). They are applied in a pass over the finished image, reading each clip in
+  order as a player does.
+
+**Mark the image as decrypted** renames `AACS` to `AACX` (and `BDSVM` to `BDSVX` when BD+ was
+applied) in both copies of the UDF metadata, so libbluray players (VLC, Kodi) open the image without
+looking for keys. The image is then no longer identical to the disc.
+
+A copy that is resumed also gets a decrypt pass over the stream units already in the image, so an
+image started without keys (or by an older version) ends up decrypted once the keys are there.
+
 ## Audio and mixed-mode CDs
 
 On a CD, detection reads the TOC (READ TOC formats 0 and 1). A CD with only data tracks is copied as
@@ -179,6 +226,9 @@ the file with every current key, so the file always lists what the app uses.
   "WriteImage": true,
   "OutputName": "",
   "DecryptCss": true,
+  "DecryptBluray": true,
+  "MarkBlurayDecrypted": false,
+  "OutputFolder": "",
   "WebPort": 8770,
   "WebPinRequired": true,
   "WebPin": "1234",
@@ -188,7 +238,7 @@ the file with every current key, so the file always lists what the app uses.
 
 | Key | Meaning |
 |-----|---------|
-| `SectorsPerRead` | Sectors per read in good areas, 1–64. |
+| `SectorsPerRead` | Sectors per read in good areas, 1–64 (lowered automatically to what one transfer of the drive holds, e.g. for 2352-byte CD sectors). |
 | `TimeoutSeconds` | Limit per command, 5–120 s. |
 | `SkipOnErrors` | Pass 1 jumps over dense error areas, which pass 1b fills later. |
 | `RetryPasses` | Rounds over the bad sectors after the scrape, 0–100. |
@@ -197,7 +247,10 @@ the file with every current key, so the file always lists what the app uses.
 | `StartSector`, `SectorLimit` | Work range, for tests. The image and the map always cover the whole disc. |
 | `WriteImage` | `false` builds only the map (a drive test). Don't switch it in the middle of a copy. |
 | `OutputName` | File name without extension. Empty = the volume label. |
-| `DecryptCss` | Decrypt CSS-protected DVD-Video while copying. `false` copies the video sectors as the drive returns them. |
+| `DecryptCss` | Decrypt CSS-protected DVD-Video (and CPPM DVD-Audio) while copying. `false` copies the sectors as the drive returns them. |
+| `DecryptBluray` | Decrypt AACS and apply BD+ while copying, with the key files (see Blu-ray above). `false` copies the stream files encrypted. |
+| `MarkBlurayDecrypted` | Rename `AACS` (and `BDSVM`) in the image so libbluray players open it without keys. |
+| `OutputFolder` | Where the copies go: `""` = the app storage on the Xbox, or a USB drive folder such as `"E:\copies"`. Chosen with the folder browser in Settings or on the web page. |
 | `WebPort` | Port of the web page. Changing it needs an app restart. |
 | `WebPinRequired`, `WebPin` | Ask for the 4–8 digit PIN shown on the Xbox screen. |
 | `KeepAwake` | Keep the console awake while the app is open: no dimming and no idle power-off. When it is off, the idle Xbox suspends the app and the web page stops answering until the app resumes. After a resume the app restarts the web page by itself. Applies at once. |

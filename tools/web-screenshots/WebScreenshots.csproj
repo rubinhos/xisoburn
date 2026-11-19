@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Runs the Xbox app's web server (xbox-app/xISOBurn/Core/WebServer.cs, unchanged) on a Windows PC, on
+    example copies, so the README screenshots of the web page can be taken in a browser. The WinRT APIs
+    it uses (sockets, JSON, storage) also exist on desktop Windows through the Windows SDK projection.
+    Used by .github/workflows/web-screenshots.yml; not part of the app.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>xISOBurn</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>$(NoWarn);CA1416;CS1998;CS4014;CS0162;CS0414</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="..\..\engine\**\*.cs" />
+    <Compile Include="..\..\xbox-app\xISOBurn\Platform.cs" />
+    <Compile Include="..\..\xbox-app\xISOBurn\Core\WebServer.cs" />
+    <Compile Include="..\..\xbox-app\xISOBurn\Core\CopyStore.cs" />
+    <Compile Include="..\..\xbox-app\xISOBurn\Core\CopyConfig.cs" />
+    <Compile Include="..\..\xbox-app\xISOBurn\Scsi\OpticalDrive.cs" />
+  </ItemGroup>
+</Project>
