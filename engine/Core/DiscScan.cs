@@ -21,7 +21,7 @@ namespace xISOBurn.Core
     /// </summary>
     internal sealed class DiscScan
     {
-        private const int SectorSize = OpticalDrive.SectorSize;
+        private readonly int SectorSize;  // 2048, or 2352 on a raw CD (read with READ CD)
         private const int Block = 16;
         private const int Points = 80;
 
@@ -36,6 +36,7 @@ namespace xISOBurn.Core
             _probe = probe;
             _log = log;
             _timeout = timeout;
+            SectorSize = probe.SectorBytes;
         }
 
         public async Task<string> RunAsync(IProgress<string> progress, CancellationToken ct)
@@ -123,7 +124,8 @@ namespace xISOBurn.Core
 
         private async Task<ScsiResult> Read(long lba, byte[] buf)
         {
-            return await _drive.SendAsync(ScsiCommands.Read10((uint)lba, Block), Block * SectorSize, buf, 0, _timeout);
+            var cdb = _probe.RawCd ? ScsiCommands.ReadCd((uint)lba, Block) : ScsiCommands.Read10((uint)lba, Block);
+            return await _drive.SendAsync(cdb, Block * SectorSize, buf, 0, _timeout);
         }
 
         private string Where(long lba)

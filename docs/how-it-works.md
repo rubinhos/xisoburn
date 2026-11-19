@@ -113,11 +113,29 @@ The port is in `engine/Css/`:
 | `CppmCipher.cs` | the C2 cipher, `process_mkb`, `cppm_decrypt_block`, `mpeg2_reset_cci` and the CPPM device keys (`src/libdvdcpxm.c`) |
 | `CssSession.cs` | `GetBusKey`, `dvdcss_disckey`, `dvdcss_titlekey`, `CrackTitleKey` (`src/css.c`) |
 
+## Audio and mixed-mode CDs
+
+On a CD, detection reads the TOC (READ TOC formats 0 and 1). A CD with only data tracks is copied as
+an ISO, like a DVD. A CD with audio tracks is copied **raw**:
+
+- every sector is read whole with READ CD (2352 bytes: audio samples, or sync, header, data and
+  EDC/ECC for data tracks), into `NAME.bin`, with all the passes, the map and the retries of a DVD;
+- `NAME.cue` is written at the start of the copy from the TOC: one `TRACK` per track (`AUDIO`, or
+  `MODE1/2352` / `MODE2/2352` from the header of the track's first sector) with its `INDEX 01`, and
+  `FLAGS PRE` for audio tracks with pre-emphasis;
+- only the first session is copied. On a multi-session disc (CD-Extra) the tracks of later sessions
+  are listed in the log and left out, because the gap between sessions cannot be read.
+
+What it doesn't do: no read offset correction, no subchannel data, no `INDEX 00` (pre-gaps), and no
+CD-TEXT. The image plays and burns normally, but the checksums of audio tracks will usually not match
+redump.org, which corrects the drive's read offset.
+
 ## Files (LocalState)
 
 | File | Contents |
 |------|----------|
 | `VOLUME.iso` | Raw image, 2048 bytes per sector, full disc size. Unread sectors are zeros. On CSS discs the video is decrypted. |
+| `VOLUME.bin` + `VOLUME.cue` | Instead of the `.iso` for a CD with audio tracks: 2352 bytes per sector, and the cue sheet (see above). |
 | `VOLUME.map` | State of every sector (see below). Resuming depends on it. |
 | `VOLUME.sha256` | SHA-256 of the image in `sha256sum` format, once nothing is left to try. |
 | `VOLUME.hashes` | Size, CRC32, MD5, SHA-1 and SHA-256 of the image (the checksums redump.org lists), computed in the same pass. |

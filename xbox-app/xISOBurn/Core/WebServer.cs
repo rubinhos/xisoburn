@@ -54,7 +54,7 @@ namespace xISOBurn.Core
         private static readonly TimeSpan DownloadReportInterval = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan DownloadStallLimit = TimeSpan.FromSeconds(60);
         private const string PinCookie = "xisoburn_pin";
-        private static readonly string[] Downloadable = { ".iso", ".map", ".sha256", ".hashes", ".log" };
+        private static readonly string[] Downloadable = { ".iso", ".bin", ".cue", ".map", ".sha256", ".hashes", ".log" };
 
         private readonly Logger _log;
         private readonly string _folder;
@@ -390,7 +390,7 @@ namespace xISOBurn.Core
                 return;
             }
 
-            bool iso = ext == ".iso";
+            bool iso = ext == ".iso" || ext == ".bin"; // a disc image (a raw CD is a .bin)
             using (var fs = opened)
             {
                 long length = fs.Length;
@@ -512,7 +512,8 @@ namespace xISOBurn.Core
         /// </summary>
         private static async Task<bool> WaitForSectorsAsync(string name, SectorStateMap map, long pos, int n)
         {
-            long first = pos / SectorSize, last = Math.Min(map.TotalSectors - 1, (pos + n - 1) / SectorSize);
+            int sectorBytes = LiveImages.SectorBytes(name);
+            long first = pos / sectorBytes, last = Math.Min(map.TotalSectors - 1, (pos + n - 1) / sectorBytes);
             for (long s = first; s <= last; s++)
             {
                 Func<long, bool> hold;
@@ -556,11 +557,11 @@ namespace xISOBurn.Core
         {
             if (name.Length == 0 || name != Path.GetFileName(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
                 return "Invalid name.";
-            if (LiveImages.Get(name + ".iso") != null)
+            if (LiveImages.Get(name + ".iso") != null || LiveImages.Get(name + ".bin") != null)
                 return name + " is being copied right now. Pause the copy first (Pause / cancel).";
             int deleted = 0;
             var store = await StoreAsync();
-            foreach (var ext in new[] { ".iso", ".map", ".sha256", ".hashes", ".old.map", ".tmp.map", ".tmp.sha256", ".tmp.hashes" })
+            foreach (var ext in new[] { ".iso", ".bin", ".cue", ".map", ".sha256", ".hashes", ".old.map", ".tmp.map", ".tmp.sha256", ".tmp.hashes", ".tmp.cue" })
             {
                 if (await store.ExistsAsync(name + ext))
                 {
@@ -643,6 +644,7 @@ namespace xISOBurn.Core
             {
                 store = await StoreAsync();
                 isos = await store.ListAsync(".iso");
+                isos.AddRange(await store.ListAsync(".bin")); // raw CD images (with a .cue)
             }
             catch (Exception ex)
             {
@@ -785,7 +787,10 @@ namespace xISOBurn.Core
             string enc = Uri.EscapeDataString(name);
             var links = new StringBuilder();
             // data-dl: the page's script follows this download (see BusyOverlay).
-            links.Append("<a data-dl=\"1\" href=\"/files/").Append(Uri.EscapeDataString(file)).Append("\">ISO</a>");
+            bool rawCd = file.EndsWith(".bin", StringComparison.OrdinalIgnoreCase);
+            links.Append("<a data-dl=\"1\" href=\"/files/").Append(Uri.EscapeDataString(file)).Append("\">").Append(rawCd ? "BIN" : "ISO").Append("</a>");
+            if (rawCd && await store.ExistsAsync(name + ".cue"))
+                links.Append(" &middot; <a href=\"/files/").Append(enc).Append(".cue\">cue</a>");
             if (await store.ExistsAsync(name + ".map"))
                 links.Append(" &middot; <a href=\"/files/").Append(enc).Append(".map\">map</a>");
             if (sha != null)
