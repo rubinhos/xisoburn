@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // CSS session with the drive: the authentication sequence of libdvdcss src/css.c (GetBusKey,
-// dvdcss_disckey, dvdcss_titlekey), Copyright (C) 1999-2008 VideoLAN, GPL-2.0-or-later.
+// dvdcss_disckey, dvdcss_titlekey), Copyright (C) 1999-2008 VideoLAN, GPL-2.0-or-later, and the
+// CPPM setup of src/libdvdcpxm.c (dvdcpxm_init) and src/cpxm.c (cppm_set_id_album).
 
 using System;
 using System.Collections.Generic;
@@ -12,12 +13,16 @@ using xISOBurn.Util;
 
 namespace xISOBurn.Css
 {
-    /// <summary>Title key for the sectors of one VOB file (LBA range, end exclusive).</summary>
+    /// <summary>
+    /// Key for the sectors of one file (LBA range, end exclusive): a CSS title key for a VOB, or, with
+    /// Cppm set, an AOB file decrypted with the session's CPPM album ID and media key (Key is null).
+    /// </summary>
     internal sealed class CssTitleKey
     {
         public string File;
         public long Start, End;
         public byte[] Key;
+        public bool Cppm;
     }
 
     /// <summary>
@@ -46,6 +51,10 @@ namespace xISOBurn.Css
         private readonly uint _timeout;
         /// <summary>The disc key is known (decrypted with a player key, or cracked).</summary>
         private bool _haveDiscKey;
+        /// <summary>The disc has VOB files (CSS video), so the disc key is worth cracking.</summary>
+        private bool _hasVobs = true;
+        /// <summary>The disc key block after the bus key XOR (CPPM reads the album ID from it).</summary>
+        private byte[] _discKeyBlock;
 
         /// <summary>Title keys recovered from the video (method "title").</summary>
         public int CrackedTitleKeys { get; private set; }
@@ -74,21 +83,31 @@ namespace xISOBurn.Css
             _log.Section("CSS");
             await LogRegionsAsync();
 
+            var vobs = new List<DiscFile>();
+            foreach (var f in files)
+                if (f.Size > 0 && f.Path.ToUpperInvariant().EndsWith(".VOB")) vobs.Add(f);
+            _hasVobs = vobs.Count > 0;
+
             bool authenticated = await AuthenticateAndReadDiscKeyAsync(true);
-            if (!authenticated)
+            if (!authenticated && _hasVobs)
                 _log.Info("CSS: without authentication, trying to recover the title keys from the video itself " +
                           "(only works if the drive serves the scrambled sectors anyway, e.g. a region-free drive).");
             ct.ThrowIfCancellationRequested();
 
-            var vobs = new List<DiscFile>();
-            foreach (var f in files)
-                if (f.Size > 0 && f.Path.ToUpperInvariant().EndsWith(".VOB")) vobs.Add(f);
             if (vobs.Count == 0)
-            {
-                _log.Info("CSS: no VOB file in the ISO9660 listing; nothing to decrypt.");
-                return true;
-            }
+                _log.Info("CSS: no VOB file in the ISO9660 listing; no video to decrypt.");
+            else
+                await TitleKeysAsync(vobs, authenticated, ct);
 
+            // DVD-Audio: the AOB files of AUDIO_TS are protected with CPPM instead.
+            await StartCppmAsync(files, authenticated, ct);
+
+            // Without authentication the session is only worth keeping if the disc gave up some keys.
+            return authenticated || _keys.Count > 0;
+        }
+
+        private async Task TitleKeysAsync(List<DiscFile> vobs, bool authenticated, CancellationToken ct)
+        {
             byte[] previous = null;
             string previousSet = null;
             foreach (var f in vobs)
@@ -128,8 +147,75 @@ namespace xISOBurn.Css
             _log.Info("CSS: " + _keys.Count + " of " + vobs.Count + " VOB file(s) have a title key" +
                       (CrackedTitleKeys > 0 ? " (" + CrackedTitleKeys + " recovered from the video)" : "") +
                       ". The video is decrypted while copying.");
-            // Without authentication the session is only worth keeping if the video gave up some keys.
-            return authenticated || _keys.Count > 0;
+        }
+
+        // ------------------------------------------------------------------ CPPM (DVD-Audio)
+
+        private ulong _albumId, _mediaKey;
+        /// <summary>The CPPM media key and album ID are known: the AOB files are decrypted.</summary>
+        public bool CppmReady { get; private set; }
+        public long CppmDecrypted { get; private set; }
+
+        /// <summary>
+        /// DVD-Audio (dvdcpxm_init for CPPM): the album ID comes from the disc key block, the media key
+        /// from AUDIO_TS/DVDAUDIO.MKB and the player device keys. Each AOB file then becomes a range
+        /// decrypted with CppmCipher. Nothing happens on discs without AOB files.
+        /// </summary>
+        private async Task StartCppmAsync(List<DiscFile> files, bool authenticated, CancellationToken ct)
+        {
+            DiscFile mkbFile = null;
+            var aobs = new List<DiscFile>();
+            foreach (var f in files)
+            {
+                string p = f.Path.ToUpperInvariant();
+                if (p.EndsWith("/DVDAUDIO.MKB") || p == "DVDAUDIO.MKB") mkbFile = f;
+                else if (f.Size > 0 && p.EndsWith(".AOB")) aobs.Add(f);
+            }
+            if (aobs.Count == 0) return;
+            _log.Info("CPPM: DVD-Audio disc, " + aobs.Count + " AOB file(s).");
+            if (mkbFile == null || mkbFile.Size <= 0)
+            {
+                _log.Info("CPPM: AUDIO_TS/DVDAUDIO.MKB not found; the audio stays encrypted.");
+                return;
+            }
+            if (!authenticated || _discKeyBlock == null)
+            {
+                _log.Info("CPPM: the drive is not authenticated, so the album ID cannot be read; the audio stays encrypted.");
+                return;
+            }
+            ct.ThrowIfCancellationRequested();
+
+            // The media key block, padded with zeros to the size libdvdread passes in.
+            var mkb = new byte[CppmCipher.MkbSize];
+            int sectors = (int)Math.Min(mkbFile.Sectors, (CppmCipher.MkbSize + CssCipher.SectorSize - 1) / CssCipher.SectorSize);
+            var raw = new byte[sectors * CssCipher.SectorSize];
+            if (!await _drive.ReadSectorsAsync(mkbFile.Lba, sectors, raw, _timeout))
+            {
+                _log.Info("CPPM: DVDAUDIO.MKB could not be read; the audio stays encrypted.");
+                return;
+            }
+            Buffer.BlockCopy(raw, 0, mkb, 0, (int)Math.Min(Math.Min(raw.Length, mkbFile.Size), mkb.Length));
+
+            _albumId = CppmCipher.AlbumId(_discKeyBlock);
+            ulong found = 0;
+            bool ok = await Task.Run(() =>
+            {
+                ulong k;
+                bool r = CppmCipher.ProcessMkb(mkb, mkb.Length, out k);
+                found = k;
+                return r;
+            });
+            if (!ok)
+            {
+                _log.Info("CPPM: none of the device keys opens the media key block (revoked?); the audio stays encrypted.");
+                return;
+            }
+            _mediaKey = found;
+            CppmReady = true;
+            foreach (var f in aobs)
+                _keys.Add(new CssTitleKey { File = f.Path, Start = f.Lba, End = f.End, Cppm = true });
+            _log.Info("CPPM: media key found, album ID " + _albumId.ToString("x16") + "; the audio of " + aobs.Count +
+                      " AOB file(s) is decrypted while copying.");
         }
 
         /// <summary>
@@ -157,7 +243,12 @@ namespace xISOBurn.Css
                 if (!CssCipher.IsScrambled(buffer, off)) continue;
                 long s = lba + i;
                 if (k == null || s < k.Start || s >= k.End) k = Find(s);
-                if (k != null && CssCipher.Unscramble(k.Key, buffer, off)) { Descrambled++; done++; }
+                if (k != null && k.Cppm)
+                {
+                    if (CppmCipher.DecryptBlock(buffer, off, _albumId, _mediaKey)) { CppmDecrypted++; Descrambled++; done++; }
+                    else LeftScrambled++;
+                }
+                else if (k != null && CssCipher.Unscramble(k.Key, buffer, off)) { Descrambled++; done++; }
                 else LeftScrambled++;
             }
             return done;
@@ -223,11 +314,17 @@ namespace xISOBurn.Css
 
             for (int i = 0; i < block.Length; i++)
                 block[i] ^= _busKey[4 - (i % 5)];
+            _discKeyBlock = block; // CPPM takes the album ID from it
             int player = await Task.Run(() => CssCipher.DecryptDiscKey(block, _discKey));
             if (player >= 0)
             {
                 _haveDiscKey = true;
                 _log.Info("CSS: drive authenticated; disc key decrypted with player key #" + player + ".");
+                return true;
+            }
+            if (!_hasVobs)
+            {
+                _log.Info("CSS: drive authenticated (no VOB files, so the disc key is not needed).");
                 return true;
             }
 
