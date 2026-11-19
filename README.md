@@ -132,9 +132,13 @@ the same file. Changes apply from the next copy.
 | Port | 8770 | Port of the web page. Changing it needs an app restart |
 | Ask for the PIN | on | Turn it off only on a network you trust |
 | PIN | random | 4 to 8 digits. **New PIN** makes another one |
+| Keep the console awake | off | Stops the console from dimming and idling off while the app is open, so it is not suspended (the web page stops answering while it is). Applies at once |
 | File name | empty | Name of the ISO. Empty uses the disc's volume name |
+| Destination of the copies | the Xbox | The app storage, or a folder on a USB drive (exFAT or NTFS for Blu-ray). **Use this folder** picks the folder shown |
 | Write the image | on | Off only tests the drive and builds the map, without saving the ISO |
-| Decrypt CSS | on | Off copies DVD-Video as it is on the disc, still encrypted |
+| Decrypt CSS | on | Off copies DVD-Video (and DVD-Audio) as it is on the disc, still encrypted |
+| Decrypt Blu-ray | on | Decrypts AACS and applies BD+ with the uploaded key files. Off copies the streams still encrypted |
+| Mark the image as decrypted | off | Blu-ray: renames `AACS` in the image so VLC and Kodi open it without keys (the ISO is then no longer identical to the disc) |
 | Sectors per read | 32 | How much is read at once in the good areas |
 | Timeout per command | 20 s | How long to wait for the drive on each read |
 | Skip ahead over areas with many errors | on | Copies the easy parts first and comes back to the damaged ones |

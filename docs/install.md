@@ -25,8 +25,8 @@ repository's **Releases** page, with exactly the files the Device Portal needs:
    You can ignore everything else: the `arm64`/`x86` dependencies, the PC install scripts and the
    telemetry files.
 
-The package is signed with a self-signed certificate (`CN=xISOBurn`). The public part is in
-`xISOBurn.cer`, but you shouldn't need it on the Xbox.
+The package is signed with a self-signed certificate (`CN=xISOBurn`), the same one for every release
+since 1.0.45.0. The public part is in `xISOBurn.cer`, but you shouldn't need it on the Xbox.
 
 To build locally instead (optional), install Visual Studio 2022 with the *Universal Windows Platform
 development* workload, open `xbox-app/xISOBurn.sln` and choose `Release | x64`.
@@ -65,14 +65,16 @@ If it doesn't open:
 3. Under dependencies, add **all three** files from `Dependencies\x64\` and click **Start**.
 4. The app appears in the Dev Home list as "xISOBurn".
 
-**Updating:** while no fixed signing certificate is configured, each build is signed with a different
-certificate. If installing a newer version complains about the signature, first remove the old one:
-in **My games & apps**, click the three dots next to xISOBurn → **Remove**. Removing the app also deletes
-its LocalState, including the copies stored on the Xbox: download them first.
+**Updating:** since version 1.0.45.0 every build is signed with the same certificate (thumbprint
+`2FDB3710…EA75`), so a newer version installs over the old one and keeps your copies and settings.
+Versions up to 1.0.44.0 were signed with a different certificate each time: when you update from one
+of those, the Device Portal refuses the signature once. Remove the old version first, in **My games &
+apps**, with the three dots next to xISOBurn → **Remove**. Removing the app also deletes its
+LocalState, including the copies stored on the Xbox: download them first.
 
-To sign every build with the same certificate, create a `.pfx` with `Subject = CN=xISOBurn` and add
-two repository secrets: `SIGNING_PFX_BASE64` (the file encoded in base64) and
-`SIGNING_PFX_PASSWORD`.
+The fixed certificate comes from two repository secrets, `SIGNING_PFX_BASE64` (the `.pfx` encoded in
+base64, `Subject = CN=xISOBurn`) and `SIGNING_PFX_PASSWORD`. A fork without them gets a new
+self-signed certificate on every build, as before.
 
 ## 5. Get logs and output files
 
