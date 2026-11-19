@@ -210,8 +210,10 @@ the disc.
 - **[libbdplus](https://code.videolan.org/videolan/libbdplus)** by VideoLAN and contributors
   (LGPL-2.1-or-later), ported at commit `a05a91d` into `Bluray/Bdplus/`: the DLX VM (`dlx.c`),
   traps and slots (`interface.c`, `trap.c`, `slot.c`, `sha1.c`), the conversion table (`segment.c`)
-  and the run sequences of `internal.c` / `examples/bdplus_test.c`. The streaming patcher and SEGK
-  tables are not ported: the active table entries are applied as fixed patches per aligned unit.
+  and the run sequences of `internal.c` / `examples/bdplus_test.c`. The active entries of a
+  conversion table are applied as fixed patches per aligned unit. Cached segment key (SEGK) tables
+  use the streaming patcher of `segment.c` (`ts_parse_desc_0x89`, `segment_patch`, in
+  `Bluray/Bdplus/SegkStream.cs`), run in order over each clip of the finished image.
 - **[GNU ddrescue](https://www.gnu.org/software/ddrescue/)**. The multi-pass copy follows its ideas:
   - a fast first pass that skips damaged areas;
   - a fill pass, then sector-by-sector scraping and retry passes;
