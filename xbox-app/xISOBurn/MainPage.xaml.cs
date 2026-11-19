@@ -504,7 +504,9 @@ namespace xISOBurn
                                       result.RetriedThisRun.ToString("N0") + " sector(s); " + (result.Bad + result.Pending).ToString("N0") +
                                       " still failed." + (result.Sha256 != null ? " SHA-256 " + result.Sha256 : "");
                 else if (result.Finished)
-                    StatusText.Text = "Finished: " + counts + "." + (result.Sha256 != null ? " SHA-256 " + result.Sha256 : "") +
+                    StatusText.Text = "Finished: " + counts + "." +
+                                      (result.Hashes != null ? " " + result.Hashes.Describe() + " (also in the .hashes file, to compare with redump.org)."
+                                                             : result.Sha256 != null ? " SHA-256 " + result.Sha256 : "") +
                                       (_webUrl.Length > 0 ? " Download it from " + _webUrl : "") +
                                       (result.Bad > 0 ? " \"Retry failed\" tries the bad sectors once more." : "");
                 else if (result.Cancelled)

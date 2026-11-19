@@ -141,9 +141,10 @@ jobs:
           1. **Add** the app ``$($msix.Name)``.
           2. Choose **Add dependency** and add the three ``.appx`` files from ``Dependencies-x64.zip`` (unzip it first).
 
-          The package is signed with a self-signed certificate (``xISOBurn.cer``). If the console refuses to
-          update an installed version, remove it first, but download your copies before you do: removing
-          the app deletes them.
+          The package is signed with the project's self-signed certificate (``xISOBurn.cer``), the same one
+          since 1.0.45.0, so it installs over an earlier release and keeps your copies. Only when updating
+          from 1.0.44.0 or older does the console refuse it once: remove the old version first, after
+          downloading your copies (removing the app deletes them).
           "@
           gh release create $tag $msix.FullName $depsZip (Join-Path $env:OUT_DIR "xISOBurn.cer") `
             --target $env:GITHUB_SHA --title "xISOBurn $env:PKG_VERSION" --notes $notes --generate-notes
