@@ -146,6 +146,8 @@ The settings are stored in `config.json`. The details are in
 
 A raw image, 2048 bytes per sector, the same as a plain ISO. On CSS discs the video sectors are
 decrypted. Sectors that can't be read stay zeros, and the `.map` file next to the image lists them.
+A CD with audio tracks becomes `NAME.bin` (2352 bytes per sector) and `NAME.cue` instead (see
+[how-it-works.md](docs/how-it-works.md#audio-and-mixed-mode-cds)).
 The `.sha256` holds the hash of the finished image, and the `.hashes` file its size, CRC32, MD5,
 SHA-1 and SHA-256 (the checksums redump.org lists). On CSS discs the image is decrypted, so it only
 matches a Redump entry made from decrypted data; turn off **Decrypt CSS** to keep the sectors as on

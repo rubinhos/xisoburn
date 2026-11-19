@@ -28,15 +28,31 @@ namespace xISOBurn.Core
     internal static class LiveImages
     {
         private static readonly Dictionary<string, SectorStateMap> Active = new Dictionary<string, SectorStateMap>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, int> Sizes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-        public static void Begin(string isoFileName, SectorStateMap map)
+        public static void Begin(string isoFileName, SectorStateMap map, int sectorBytes = 2048)
         {
-            lock (Active) Active[isoFileName] = map;
+            lock (Active)
+            {
+                Active[isoFileName] = map;
+                Sizes[isoFileName] = sectorBytes;
+            }
         }
 
         public static void End(string isoFileName)
         {
-            lock (Active) Active.Remove(isoFileName);
+            lock (Active)
+            {
+                Active.Remove(isoFileName);
+                Sizes.Remove(isoFileName);
+            }
+        }
+
+        /// <summary>Bytes per sector of an image being copied: 2048, or 2352 for a raw CD (.bin).</summary>
+        public static int SectorBytes(string isoFileName)
+        {
+            int n;
+            lock (Active) return Sizes.TryGetValue(isoFileName, out n) ? n : 2048;
         }
 
         public static SectorStateMap Get(string isoFileName)
@@ -102,7 +118,10 @@ namespace xISOBurn.Core
     /// </summary>
     internal sealed class RescueJob
     {
-        private const int SectorSize = OpticalDrive.SectorSize;
+        /// <summary>Bytes per sector of the image: 2048, or 2352 for a raw CD (DiscProbe.RawCd).</summary>
+        private readonly int SectorSize;
+        /// <summary>Sectors per read in good areas: the setting, within what one transfer of the drive holds.</summary>
+        private readonly int _sectorsPerRead;
         private const int EccBlock = 16;                 // DVD ECC block = 16 sectors (32 KiB)
         private const int CarefulSectors = 2048;         // after an error, read ECC-block-sized pieces for this long
         private const int DenseWindow = 4096;            // "dense errors" = this many failures...
@@ -174,6 +193,8 @@ namespace xISOBurn.Core
             _log = log;
             _folder = folder;
             _extraRetryPass = extraRetryPass;
+            SectorSize = probe.SectorBytes;
+            _sectorsPerRead = Math.Max(1, Math.Min(cfg.SectorsPerRead, drive.MaxTransferBytes / SectorSize));
         }
 
         public async Task<RescueResult> RunAsync(IProgress<RescueProgress> progress, CancellationToken ct)
@@ -187,7 +208,7 @@ namespace xISOBurn.Core
             long end = _cfg.SectorLimit > 0 ? Math.Min(total, first + _cfg.SectorLimit) : total;
 
             string baseName = BaseName();
-            _imageName = baseName + ".iso";
+            _imageName = baseName + _probe.ImageExtension;
             _mapName = baseName + ".map";
             try
             {
@@ -206,6 +227,24 @@ namespace xISOBurn.Core
 
             _log.Section("Rescue");
             _log.Info("Settings: " + _cfg.Describe());
+            if (_sectorsPerRead != _cfg.SectorsPerRead)
+                _log.Info("Sectors per read: " + _sectorsPerRead + " (the drive takes at most " + (_drive.MaxTransferBytes / 1024) +
+                          " KiB per read" + (_probe.RawCd ? ", and raw CD sectors are 2352 bytes" : "") + ").");
+            if (_probe.RawCd && _probe.Toc != null && _cfg.WriteImage)
+            {
+                // The cue sheet only depends on the TOC: write it at once, so the .bin can be used even while resuming.
+                string cueName = baseName + ".cue";
+                try
+                {
+                    await _store.WriteTextAtomicAsync(cueName, _probe.Toc.ToCue(_imageName));
+                    _log.Info("CD: raw copy (2352-byte sectors, READ CD) to " + _imageName + "; cue sheet " + cueName + " (" +
+                              _probe.Toc.Describe() + ").");
+                }
+                catch (Exception ex)
+                {
+                    _log.Info("CD: the cue sheet " + cueName + " could not be written (" + ex.Message + "); the copy goes on.");
+                }
+            }
             await LoadOrCreateMapAsync(total);
             bool resumedWithData = _map.Count(SectorState.Ok) > 0;
             _log.Info("Work range: LBA " + first + " to " + (end - 1) + (first > 0 || end < total ? " (partial range)" : " (whole disc)"));
@@ -424,7 +463,7 @@ namespace xISOBurn.Core
             }
             await OpenImageAsync(total);
             // From now on the web page can follow this copy (download while reading).
-            LiveImages.Begin(_imageName, _map);
+            LiveImages.Begin(_imageName, _map, SectorSize);
         }
 
         private async Task OpenImageAsync(long total)
@@ -449,16 +488,16 @@ namespace xISOBurn.Core
                     long free = -1;
                     try { free = await _store.FreeBytesAsync(); } catch (Exception) { }
                     string why = ex.HResult == unchecked((int)0x80070070)
-                        ? "not enough space on " + _store.Description + " for the image: it needs " + DiscProbe.FormatSize(total) +
+                        ? "not enough space on " + _store.Description + " for the image: it needs " + DiscProbe.FormatSize(total, SectorSize) +
                           ", " + CopyStore.FormatBytes(free) + " free. " + Platform.OtherDestinationHint + ", free space, " +
                           "or copy part of the disc (StartSector / SectorLimit)."
-                        : "the image of " + DiscProbe.FormatSize(total) + " cannot be created on " + _store.Description + " (" + free + " bytes free): 0x" +
+                        : "the image of " + DiscProbe.FormatSize(total, SectorSize) + " cannot be created on " + _store.Description + " (" + free + " bytes free): 0x" +
                           ex.HResult.ToString("X8") + " " + ex.Message +
                           (_store.LimitedTo4GiB && need >= 4L * 1024 * 1024 * 1024 ? ". A FAT32 drive cannot hold files of 4 GiB or more: format it as exFAT or NTFS." : "");
                     throw new IOException(why, ex);
                 }
             }
-            _log.Info("Image: " + _imagePath + " (" + DiscProbe.FormatSize(total) + ")");
+            _log.Info("Image: " + _imagePath + " (" + DiscProbe.FormatSize(total, SectorSize) + ")");
         }
 
         private void FlushImage()
@@ -518,7 +557,7 @@ namespace xISOBurn.Core
                     _ct.ThrowIfCancellationRequested();
                     int n = pos < carefulUntil
                         ? (int)Math.Min(EccBlock - pos % EccBlock, runEnd - pos)
-                        : (int)Math.Min(_cfg.SectorsPerRead, runEnd - pos);
+                        : (int)Math.Min(_sectorsPerRead, runEnd - pos);
 
                     var r = await ReadAsync(pos, n);
                     int failedPieces = 0;
@@ -610,9 +649,15 @@ namespace xISOBurn.Core
 
         // ------------------------------------------------------------ reading and writing
 
+        /// <summary>READ(10) of 2048-byte sectors, or READ CD of whole 2352-byte sectors on a raw CD.</summary>
+        private byte[] ReadCommand(long lba, int count)
+        {
+            return _probe.RawCd ? ScsiCommands.ReadCd((uint)lba, count) : ScsiCommands.Read10((uint)lba, count);
+        }
+
         private async Task<ScsiResult> ReadAsync(long lba, int count)
         {
-            var r = await _drive.SendAsync(ScsiCommands.Read10((uint)lba, count), count * SectorSize, _buffer, 0,
+            var r = await _drive.SendAsync(ReadCommand(lba, count), count * SectorSize, _buffer, 0,
                                            (uint)_cfg.TimeoutSeconds);
             if (r.Sense != null && r.Sense.IsNoMedium)
                 throw new MediumRemovedException("Disc removed or no media in the drive: " + r.Sense);
@@ -620,7 +665,7 @@ namespace xISOBurn.Core
                 await _css.ReauthenticateAsync())
             {
                 // The drive dropped the authentication (e.g. after a reset); read once more with it back.
-                r = await _drive.SendAsync(ScsiCommands.Read10((uint)lba, count), count * SectorSize, _buffer, 0,
+                r = await _drive.SendAsync(ReadCommand(lba, count), count * SectorSize, _buffer, 0,
                                            (uint)_cfg.TimeoutSeconds);
             }
             if (IsRefusal(r)) NoteRefusal(lba);
@@ -748,7 +793,7 @@ namespace xISOBurn.Core
             }
         }
 
-        private static bool Ok(ScsiResult r, int count)
+        private bool Ok(ScsiResult r, int count)
         {
             return r.Success && r.DataLength == count * SectorSize;
         }
@@ -894,7 +939,7 @@ namespace xISOBurn.Core
             _phase = phase;
             _phaseDone = 0;
             _phaseTotal = total;
-            _speed = new SpeedMeter(_sw.Elapsed);
+            _speed = new SpeedMeter(_sw.Elapsed, SectorSize);
             _lastPercentLogged = -1;
             _log.Section(phase);
             _log.Info(total.ToString("N0") + " sector(s) to handle. Disc: " + _map.Summary());
@@ -987,8 +1032,11 @@ namespace xISOBurn.Core
             private readonly Queue<KeyValuePair<TimeSpan, long>> _samples = new Queue<KeyValuePair<TimeSpan, long>>();
             public double BytesPerSecond { get; private set; }
 
-            public SpeedMeter(TimeSpan start)
+            private readonly int _sectorBytes;
+
+            public SpeedMeter(TimeSpan start, int sectorBytes)
             {
+                _sectorBytes = sectorBytes;
                 _samples.Enqueue(new KeyValuePair<TimeSpan, long>(start, 0));
             }
 
@@ -998,7 +1046,7 @@ namespace xISOBurn.Core
                 while (_samples.Count > 2 && at - _samples.Peek().Key > TimeSpan.FromSeconds(15)) _samples.Dequeue();
                 var oldest = _samples.Peek();
                 double secs = (at - oldest.Key).TotalSeconds;
-                if (secs > 0.5) BytesPerSecond = (sectorsDone - oldest.Value) * (double)SectorSize / secs;
+                if (secs > 0.5) BytesPerSecond = (sectorsDone - oldest.Value) * (double)_sectorBytes / secs;
             }
         }
     }

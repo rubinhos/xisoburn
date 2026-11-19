@@ -33,6 +33,17 @@ namespace xISOBurn.Core
         public string TotalSource = "";
         public List<DiscFile> Files = new List<DiscFile>();
         public readonly List<string> Warnings = new List<string>();
+        /// <summary>CD: the table of contents; null on other media.</summary>
+        public CdToc Toc;
+        /// <summary>
+        /// A CD with audio tracks: copied raw, 2352 bytes per sector with READ CD, into NAME.bin + NAME.cue.
+        /// Data-only CDs stay plain ISO images like DVDs.
+        /// </summary>
+        public bool RawCd;
+        /// <summary>Bytes per sector of the image: 2352 for a raw CD, 2048 otherwise.</summary>
+        public int SectorBytes { get { return RawCd ? ScsiCommands.CdRawSectorSize : SectorSize; } }
+        /// <summary>The image file extension: ".bin" for a raw CD, ".iso" otherwise.</summary>
+        public string ImageExtension { get { return RawCd ? ".bin" : ".iso"; } }
 
         public static async Task<DiscProbe> RunAsync(OpticalDrive drive, uint timeout, Logger log)
         {
@@ -63,6 +74,9 @@ namespace xISOBurn.Core
             rc = await drive.SendAsync(ScsiCommands.ReadCapacity10(), 8, buf, 0, timeout);
             if (rc.Success && rc.DataLength >= 8) p.ReadCapacitySectors = (long)Bytes.BE32(buf, 0) + 1;
             log.Info("READ CAPACITY: " + (p.ReadCapacitySectors >= 0 ? p.ReadCapacitySectors + " sectors" : rc.Describe()));
+
+            if (MmcProfiles.IsCd(p.Profile))
+                await ReadTocAsync(p, drive, timeout, log);
 
             bool dvd = MmcProfiles.IsDvd(p.Profile);
             if (dvd || p.Profile < 0)
@@ -137,13 +151,66 @@ namespace xISOBurn.Core
             }
 
             p.DecideSize();
-            log.Info("Size to copy: " + p.TotalSectors + " sectors (" + FormatSize(p.TotalSectors) + "), source: " + p.TotalSource);
+            log.Info("Size to copy: " + p.TotalSectors + " sectors (" + FormatSize(p.TotalSectors, p.SectorBytes) + "), source: " + p.TotalSource);
             foreach (var w in p.Warnings) log.Info("WARNING: " + w);
             return p;
         }
 
+        /// <summary>CD: reads the TOC; a disc with audio tracks is copied raw (bin/cue).</summary>
+        private static async Task ReadTocAsync(DiscProbe p, OpticalDrive drive, uint timeout, Logger log)
+        {
+            var toc = new byte[4 + 100 * 8];
+            var rc = await drive.SendAsync(ScsiCommands.ReadToc(0, 0, toc.Length), toc.Length, toc, 0, timeout);
+            var ses = new byte[12];
+            var rs = await drive.SendAsync(ScsiCommands.ReadToc(1, 0, ses.Length), ses.Length, ses, 0, timeout);
+            if (!rc.Success)
+            {
+                log.Info("CD TOC: " + rc.Describe());
+                return;
+            }
+            p.Toc = CdToc.Parse(toc, rc.DataLength, rs.Success ? ses : null, rs.Success ? rs.DataLength : 0);
+            if (p.Toc == null)
+            {
+                log.Info("CD TOC: no usable track list.");
+                return;
+            }
+            p.RawCd = p.Toc.HasAudio;
+
+            // Data tracks of a raw copy: Mode 1 or Mode 2, from the header of their first sector.
+            if (p.RawCd)
+            {
+                var raw = new byte[ScsiCommands.CdRawSectorSize];
+                foreach (var t in p.Toc.Tracks)
+                {
+                    if (t.Audio) continue;
+                    var r = await drive.SendAsync(ScsiCommands.ReadCd((uint)t.Lba, 1), raw.Length, raw, 0, timeout);
+                    if (r.Success && r.DataLength == raw.Length && (raw[15] == 1 || raw[15] == 2)) t.Mode = raw[15];
+                }
+            }
+            log.Info("CD TOC: " + p.Toc.Describe() + ", lead-out at LBA " + p.Toc.LeadOut +
+                     (p.RawCd ? "; copied raw (2352-byte sectors) to .bin + .cue" : "; data only, copied as an ISO"));
+            foreach (var t in p.Toc.Tracks)
+                log.Info("  Track " + t.Number.ToString("00") + " " + t.CueType.PadRight(10) + " LBA " + t.Lba.ToString().PadLeft(7) +
+                         "-" + (t.End - 1).ToString().PadRight(7) + " (" + FormatDuration(t.End - t.Lba) + ")");
+            foreach (var t in p.Toc.OtherSessions)
+                log.Info("  Track " + t.Number.ToString("00") + " in a later session (LBA " + t.Lba + "): not copied.");
+        }
+
+        private static string FormatDuration(long sectors)
+        {
+            long seconds = sectors / 75;
+            return (seconds / 60) + ":" + (seconds % 60).ToString("00");
+        }
+
         private void DecideSize()
         {
+            if (RawCd && Toc != null)
+            {
+                // The TOC is the only reliable size of an audio CD (READ CAPACITY can stop at the last data track).
+                TotalSectors = Toc.FirstSessionEnd;
+                TotalSource = "CD TOC (first session)";
+                return;
+            }
             long structure = -1;
             if (Pfi != null)
             {
@@ -196,10 +263,12 @@ namespace xISOBurn.Core
                 media += ", 1 layer";
             yield return media;
             yield return "Volume: " + (VolumeLabel.Length > 0 ? VolumeLabel : "(no ISO9660)") + (Udf ? " | UDF" : "");
+            if (Toc != null)
+                yield return "CD: " + Toc.Describe() + (RawCd ? " | copied raw to .bin + .cue" : "");
             if (MmcProfiles.IsBluray(Profile) && Udf)
                 yield return "Protection: " + (Aacs ? "AACS" + (Bdplus ? " + BD+" : "") + " (decrypted while copying with the Blu-ray key files)" : "none") +
                              (Files.Count > 0 ? " | " + Files.Count + " files" : "");
-            yield return "Size: " + TotalSectors.ToString("N0") + " sectors (" + FormatSize(TotalSectors) + ")" +
+            yield return "Size: " + TotalSectors.ToString("N0") + " sectors (" + FormatSize(TotalSectors, SectorBytes) + ")" +
                          (Pfi != null && Pfi.NumberOfLayers > 1 ? " | layer change at LBA " + Pfi.Layer0Sectors.ToString("N0") : "");
             if (Cpst >= 0)
                 yield return "Protection: " + CpstName(Cpst) + (Cpst == 1 ? " (the image may come out scrambled)" : "") +
@@ -220,8 +289,15 @@ namespace xISOBurn.Core
 
         public static string FormatSize(long sectors)
         {
+            return FormatSize(sectors, SectorSize);
+        }
+
+        public static string FormatSize(long sectors, int bytesPerSector)
+        {
             if (sectors < 0) return "?";
-            return (sectors * (double)SectorSize / 1073741824.0).ToString("0.00") + " GiB";
+            double bytes = sectors * (double)bytesPerSector;
+            return bytes < 1073741824.0 ? (bytes / 1048576.0).ToString("0.0") + " MiB"
+                                        : (bytes / 1073741824.0).ToString("0.00") + " GiB";
         }
     }
 }

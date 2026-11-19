@@ -111,5 +111,40 @@ namespace xISOBurn.Scsi
             Bytes.PutBE16(cdb, 7, parameterListLength);
             return cdb;
         }
+
+        /// <summary>Bytes per sector of a raw CD read: sync, header, user data and EDC/ECC (or 2352 bytes of audio).</summary>
+        public const int CdRawSectorSize = 2352;
+
+        /// <summary>
+        /// READ CD (0xBE): 'count' whole 2352-byte sectors from 'lba', any sector type (audio or data),
+        /// with sync, headers, user data and EDC/ECC (byte 9 = 0xF8) and no subchannel.
+        /// </summary>
+        public static byte[] ReadCd(uint lba, int count)
+        {
+            var cdb = new byte[12];
+            cdb[0] = 0xBE;
+            cdb[1] = 0x00;              // expected sector type: any
+            Bytes.PutBE32(cdb, 2, lba);
+            cdb[6] = (byte)(count >> 16);
+            cdb[7] = (byte)(count >> 8);
+            cdb[8] = (byte)count;
+            cdb[9] = 0xF8;              // sync + all headers + user data + EDC/ECC
+            cdb[10] = 0x00;             // no subchannel
+            return cdb;
+        }
+
+        /// <summary>
+        /// READ TOC/PMA/ATIP (0x43) with LBA addresses: format 0 = the TOC (one 8-byte descriptor per
+        /// track, then the lead-out, track 0xAA); format 1 = session information.
+        /// </summary>
+        public static byte[] ReadToc(byte format, byte track, int allocationLength)
+        {
+            var cdb = new byte[10];
+            cdb[0] = 0x43;
+            cdb[2] = (byte)(format & 0x0F);
+            cdb[6] = track;
+            Bytes.PutBE16(cdb, 7, allocationLength);
+            return cdb;
+        }
     }
 }
