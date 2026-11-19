@@ -164,6 +164,7 @@ The `.sha256` holds the hash of the finished image.
   - `Css/CssTables.cs`: generated verbatim from `src/csstables.h`;
   - `Css/CssCipher.cs`: `CryptKey`, `DecryptKey`, `DecryptDiscKey` with the player keys,
     `DecryptTitleKey` and `dvdcss_unscramble` from `src/css.c`, ported line by line;
+  - `Css/CssCrack.cs`: the key attacks `CrackDiscKey`, `RecoverTitleKey` and `AttackPattern`;
   - `Css/CssSession.cs`: the authentication sequence of `GetBusKey`, `dvdcss_disckey` and
     `dvdcss_titlekey` (`src/css.c`);
   - `Css/CssDrive.cs`: the CDBs and response offsets of the raw-SCSI branches of `src/ioctl.c`.

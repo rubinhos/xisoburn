@@ -71,10 +71,15 @@ sectors. xISOBurn uses a C# port of [libdvdcss](https://code.videolan.org/videol
    against the 32 variants of `CryptKey`), REPORT KEY challenge, SEND KEY KEY2. Every DVD player does
    this handshake.
 3. **Disc key.** READ DVD STRUCTURE format 02h, ASF = 1, then decryption with the 31 player keys of
-   libdvdcss.
+   libdvdcss. If none of them opens it, the disc key is cracked from its hash (`CrackDiscKey`, a few
+   seconds and about 64 MiB of memory).
 4. **Title keys.** For each VOB in the ISO 9660 listing: a new bus key, then REPORT KEY title key at
    the file's first sector, decrypted with the disc key. `VTS_xx_2..9.VOB` fall back to the key of
-   the previous file of the same title set.
+   the previous file of the same title set. If there is no disc key, or the drive refuses the title
+   key, the title key is recovered from the video itself (`CrackTitleKey` with `AttackPattern`): the
+   start of the VOB is read until a scrambled sector gives the key away, up to 256 MiB per file.
+   If authentication fails altogether, this is still tried, for drives that serve the scrambled
+   sectors anyway (region-free drives).
 5. **Copy.** With the drive authenticated, the video sectors read normally. Before each block is
    written, every scrambled sector (PES scrambling bits in byte `0x14`) inside a VOB with a key is
    descrambled (`dvdcss_unscramble`), and its scrambling bits are cleared. The ISO comes out
@@ -87,9 +92,7 @@ sectors. xISOBurn uses a C# port of [libdvdcss](https://code.videolan.org/videol
 
 What isn't supported:
 
-- Discs whose disc key none of the player keys open. libdvdcss would then attack the title keys
-  (`CrackTitleKey`), which isn't ported. The video is then copied scrambled, and the log says so.
-- A disc from a region the drive isn't set to. The drive refuses the keys.
+- A disc from a region the drive isn't set to, on a drive that enforces its region (RPC-2): the drive refuses the keys and the video sectors.
 - CPPM (DVD-Audio) and CPRM.
 
 The port is in `engine/Css/`:
@@ -99,7 +102,8 @@ The port is in `engine/Css/`:
 | `CssTables.cs` | `src/csstables.h`, generated verbatim |
 | `CssCipher.cs` | `CryptKey`, `DecryptKey`, `DecryptDiscKey` + `player_keys`, `DecryptTitleKey`, `dvdcss_unscramble` (`src/css.c`) |
 | `CssDrive.cs` | the CDBs and response offsets of the raw-SCSI branches of `src/ioctl.c` |
-| `CssSession.cs` | `GetBusKey`, `dvdcss_disckey`, `dvdcss_titlekey` (`src/css.c`) |
+| `CssCrack.cs` | `investigate`, `CrackDiscKey`, `RecoverTitleKey`, `AttackPattern` (`src/css.c`) |
+| `CssSession.cs` | `GetBusKey`, `dvdcss_disckey`, `dvdcss_titlekey`, `CrackTitleKey` (`src/css.c`) |
 
 ## Files (LocalState)
 
