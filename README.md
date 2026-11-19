@@ -4,24 +4,32 @@
 
 # xISOBurn
 
-An Xbox Series X app (UWP, Developer Mode; the Series S has no disc drive) that copies the disc in the console's optical drive to an
-ISO image, sector by sector. It serves a web page from which your PC's browser downloads the image.
-You only install the Xbox app; the PC needs nothing.
+An Xbox Series X app (UWP, Developer Mode; the Series S has no disc drive) that copies the disc in
+the console's optical drive (DVD, Blu-ray or CD) to an ISO image, sector by sector. It serves a web
+page from which your PC's browser downloads the image. You only install the Xbox app; the PC needs
+nothing.
 
 - **Damaged discs:** the copy runs in multiple resumable passes, in the style of ddrescue. The
-  readable data is copied first, then the damaged areas. A map records every sector, and the
-  SHA-256 is computed when nothing is left to read. When the PC's DVD drive fails on a disc
-  (`MEDIUM ERROR / UNRECOVERED READ ERROR`), the Xbox drive becomes a second reader.
+  readable data is copied first, then the damaged areas. A map records every sector. When the PC's
+  DVD drive fails on a disc (`MEDIUM ERROR / UNRECOVERED READ ERROR`), the Xbox drive becomes a
+  second reader.
+- **Checksums:** when nothing is left to read, the app computes the SHA-256 of the image and writes
+  a `.hashes` file with its size, CRC32, MD5 and SHA-1, the values [redump.org](http://redump.org)
+  lists, to check a copy against its entry.
 - **CSS-protected DVD-Video:** the app authenticates with the drive and decrypts the video while
-  copying, so the ISO plays in any player. The disc has to be from the console's region. DVD-Audio
-  discs (CPPM) are decrypted the same way.
+  copying, so the ISO plays in any player. The disc has to be from the console's region. If the
+  player keys do not open the disc key, the keys are cracked or recovered from the video, as
+  libdvdcss does. DVD-Audio discs (CPPM) are decrypted the same way.
 - **AACS / BD+ Blu-ray (experimental):** with key files you upload on the web page (**Blu-ray keys**:
   `KEYDB.cfg`, and for BD+ the libbdplus `vm0` player files or cached conversion tables), the app
   decrypts the `.m2ts` streams while copying and applies the BD+ fixups. The app ships no keys.
   AACS 2 (UHD) discs only work with a VUK or unit keys in `KEYDB.cfg`. Tested: a BD-50 with AACS 1,
   keys from the MKB and the Volume ID read from the Xbox drive. The ISO plays in PowerDVD; for VLC and
   Kodi turn on **Mark the image as decrypted**, which renames the `AACS` folder in the image (main and
-  mirror UDF metadata) so libbluray does not ask for keys.
+  mirror UDF metadata) so libbluray does not ask for keys. BD+ conversion tables come from the disc's
+  BD+ program (with the libbdplus player files) or from a cached table, segment key (`SEGK`) tables
+  included.
+- **CDs:** a data CD gives an ISO; an audio or mixed-mode CD is copied raw to `.bin` + `.cue`.
 - **Copies on the Xbox or on a USB drive:** choose the destination in **Settings** (or **change
   destination** on the web page). Blu-ray images need a USB drive in exFAT or NTFS: a 39 GiB image was
   written as one file to a USB drive in Developer Mode.
@@ -39,9 +47,9 @@ PC drive (internal or USB), with the same copy engine.
 | Disc | Image | Tested |
 |------|-------|--------|
 | Data DVD, DVD-Video without protection | `.iso` | Yes |
-| CSS-protected DVD-Video | `.iso`, video decrypted | Yes (disc from the console's region) |
+| CSS-protected DVD-Video | `.iso`, video decrypted | Yes (disc from the console's region, opened with the player keys). The key attacks for other discs: not yet |
 | DVD-Audio (CPPM) | `.iso`, audio decrypted | Not yet |
-| Blu-ray, AACS 1 / BD+ (experimental) | `.iso`, streams decrypted with your key files | A BD-50 with AACS 1 |
+| Blu-ray, AACS 1 / BD+ (experimental) | `.iso`, streams decrypted with your key files | A BD-50 with AACS 1 on the Xbox, and a Blu-ray on a PC with the Windows version |
 | Blu-ray, AACS 2 (UHD) | `.iso`, only with a VUK or unit keys in `KEYDB.cfg` | Not yet |
 | Data CD-ROM (ISO 9660) | `.iso` | Yes, a pressed PC game CD ([#7](https://github.com/rubinhos/xisoburn/issues/7), thanks @Chorss) |
 | Audio CD, mixed-mode CD | `.bin` + `.cue` (2352-byte sectors) | Not yet |
@@ -79,6 +87,7 @@ Open xISOBurn and insert the disc. Move between buttons with the D-pad and press
 | **Retry failed** | Tries the sectors that could not be read once more. It is only enabled when there are some |
 | **Scan disc** | A quick read-only health check that reads about 90 spots across the disc. It writes nothing |
 | **Settings** | The settings below |
+| **Quit** | Closes the app. A running copy is paused first, so **Copy / resume** continues it next time |
 | **Progress** | The bar shows how much of the disc is copied. The text shows the current pass, speed and time left |
 | Log | Everything the app does, line by line. Scroll it with the D-pad |
 | Bottom line | What is happening now, or the result of the last action |
@@ -90,8 +99,15 @@ The screen stays on by itself.
 areas, slower and sector by sector. Sectors that still fail are listed in the log and in the `.map`
 file. Try **Retry failed** later, or after cleaning the disc.
 
-**CSS-protected DVD-Video:** nothing to do. The app decrypts the video while copying, so the ISO
-plays in any player. The disc has to be from the console's region.
+**CSS-protected DVD-Video and DVD-Audio:** nothing to do. The app decrypts them while copying, so the
+ISO plays in any player. The disc has to be from the console's region.
+
+**Blu-ray:** upload the key files first, under **Blu-ray keys** on the web page (see below). Without
+them the copy still works, but the video stays encrypted. If you add the keys later, **Copy / resume**
+decrypts what was already copied.
+
+**CDs:** nothing to do either. An audio CD becomes `NAME.bin` + `NAME.cue`, which media players and
+burning programs open.
 
 ### 3. Download on the PC
 
@@ -104,9 +120,11 @@ and type the PIN. The PC and the Xbox must be on the same network.
   information. You can run everything from the PC. Only inserting the disc needs you at the console.
   A button that is greyed out is also unavailable on the Xbox at that moment.
 - **Recent log** opens the last lines of the log.
-- **Copies on the Xbox** lists every copy:
-  - **ISO** downloads the image. You can download while the copy is still running: the download
-    waits for the sectors that are still being read. If the network drops, resume it in the browser.
+- **Copies on the Xbox** (or on the USB drive) lists every copy. **change destination** next to the
+  title browses the USB drives and picks the folder for the next copies.
+  - **ISO** (**BIN** and **cue** for an audio CD) downloads the image. You can download while the copy
+    is still running: the download waits for the sectors that are still being read. If the network
+    drops, resume it in the browser.
   - **map** lists which sectors were read and which failed.
   - **sha256** is the hash of the finished image. Check your download with
     `Get-FileHash .\NAME.iso -Algorithm SHA256` in PowerShell and compare it with the page.
@@ -114,6 +132,11 @@ and type the PIN. The PC and the Xbox must be on the same network.
     [redump.org](http://redump.org) lists for a disc, so you can check the copy against its entry.
   - **Delete** removes the copy from the Xbox to free space. It isn't offered while that copy runs.
 - **Log files** has the full log of each session.
+- **Blu-ray keys** uploads key files to the Xbox: `KEYDB.cfg` (and optionally
+  `ProcessingDeviceKeysSimple.txt`, `HostKeyCertificate.txt`), the libbdplus `vm0` player files, cached
+  BD+ conversion tables, or a `.zip` of them. It lists what is installed and can delete it all. The app
+  ships no keys; [how-it-works.md](docs/how-it-works.md#blu-ray-aacs-and-bd) explains what each
+  file is for.
 
 The page updates itself every 5 seconds. While the Xbox handles a click, the page shows a loading
 screen.
@@ -139,7 +162,7 @@ the same file. Changes apply from the next copy.
 | Decrypt CSS | on | Off copies DVD-Video (and DVD-Audio) as it is on the disc, still encrypted |
 | Decrypt Blu-ray | on | Decrypts AACS and applies BD+ with the uploaded key files. Off copies the streams still encrypted |
 | Mark the image as decrypted | off | Blu-ray: renames `AACS` in the image so VLC and Kodi open it without keys (the ISO is then no longer identical to the disc) |
-| Sectors per read | 32 | How much is read at once in the good areas |
+| Sectors per read | 32 | How much is read at once in the good areas (lowered automatically for raw CD sectors) |
 | Timeout per command | 20 s | How long to wait for the drive on each read |
 | Skip ahead over areas with many errors | on | Copies the easy parts first and comes back to the damaged ones |
 | Retry passes | 2 | Extra passes over the sectors that still fail |
@@ -155,7 +178,8 @@ The settings are stored in `config.json`. The details are in
 | Document | Contents |
 |----------|----------|
 | [docs/install.md](docs/install.md) | Build on GitHub Actions, Developer Mode and the Device Portal, installing and updating, getting logs and files |
-| [docs/how-it-works.md](docs/how-it-works.md) | Drive access, the copy passes, CSS decryption, the `.map` format, `config.json`, the web page |
+| [docs/how-it-works.md](docs/how-it-works.md) | Drive access, the copy passes, CSS and CPPM decryption, Blu-ray (AACS, BD+ and the key files), audio CDs, the `.map` format, `config.json`, the web page |
+| [engine/README.md](engine/README.md) | The copy engine shared with the Windows version, and what each app provides |
 
 ## Repository layout
 
@@ -164,7 +188,8 @@ The settings are stored in `config.json`. The details are in
 | `engine/` | The copy engine, shared with [xISOBurn for Windows](https://github.com/rubinhos/xisoburn-pc): disc detection, multi-pass copy, sector map, disc scan, CSS (libdvdcss port), AACS and BD+ (libaacs and libbdplus ports). See [engine/README.md](engine/README.md) |
 | `xbox-app/xISOBurn/Scsi/` | Drive access: `Windows.Devices.Custom` + SCSI pass-through |
 | `xbox-app/xISOBurn/Core/` | Settings, copy store (app storage or USB drive), web server |
-| `docs/images/` | The pictures in this README |
+| `xbox-app/xISOBurn/` | The app screen (`MainPage.xaml`), the package manifest and `Platform.cs` (the words the engine uses for the Xbox) |
+| `docs/` | Install guide, how it works, and the pictures in this README (`docs/images/`) |
 | `.github/workflows/build.yml` | Build and packaging on GitHub Actions |
 
 ## Output
@@ -182,6 +207,8 @@ the disc.
 
 ### Code this project builds on
 
+The paths below are in `engine/`, except the Xbox drive access in `xbox-app/xISOBurn/Scsi/`.
+
 - **XBSX2 PR #11**, ["UWP/CDVD: Add support for the Xbox disc drive"](https://github.com/XboxEmulationHub/XBSX2/pull/11)
   ([XBSX2](https://github.com/XboxEmulationHub/XBSX2), `pcsx2/CDVD/Windows/IOCtlSrcXbox.cpp` / `.h`).
   The drive access comes from there:
@@ -190,7 +217,7 @@ the disc.
   - the `IOCTL_SCSI_PASS_THROUGH` control code;
   - the buffered `SCSI_PASS_THROUGH` layout (header, sense and data in one buffer).
 
-  The code in `Scsi/` is a C# rewrite of that technique, not a copy of the file. xISOBurn adds
+  The code in `xbox-app/xISOBurn/Scsi/` is a C# rewrite of that technique, not a copy of the file. xISOBurn adds
   DATA OUT commands (MODE SELECT, SEND KEY), which XBSX2 doesn't send.
 - **[libdvdcss](https://code.videolan.org/videolan/libdvdcss)** by VideoLAN (GPL-2.0-or-later),
   ported at commit `811ce97`. CSS decryption is a C# port of its code:
@@ -207,7 +234,8 @@ the disc.
   libdvdcss itself builds on css-auth by Derek Fawcus, the DVD CSS ioctls example by Andrew T.
   Veliath, Frank A. Stevenson's work on CSS, DeCSSPlus and DecVOB.
 - **[libaacs](https://code.videolan.org/videolan/libaacs)** by VideoLAN and contributors
-  (LGPL-2.1-or-later), ported at commit `55be92b` into `Bluray/Aacs/`: the key waterfall and unit
+  (LGPL-2.1-or-later), ported at commit `55be92b` (the later fixes up to `af34106` are C memory and
+  build fixes, not needed in C#) into `Bluray/Aacs/`: the key waterfall and unit
   decryption of `aacs.c`, the drive authentication of `mmc.c`, `mk.c`, `mkb.c`, `unit_key.c`,
   `content_cert.c`, `cci.c`, and the KEYDB.cfg grammar of `keydbcfg-parser.y` (rewritten by hand).
   libgcrypt is replaced by `Bluray/Crypto.cs` (.NET AES/SHA, ECDSA with `BigInteger`).
@@ -229,7 +257,10 @@ the disc.
 
 | Topic | Reference |
 |-------|-----------|
-| SCSI commands: TEST UNIT READY, REQUEST SENSE, READ(10), READ CAPACITY, GET CONFIGURATION, READ DVD STRUCTURE (physical, copyright, disc key), REPORT KEY, SEND KEY, SET CD SPEED, MODE SENSE/SELECT page 01h | T10 [MMC (Multi-Media Commands)](https://www.t10.org/drafts.htm) and SPC (sense keys and ASC/ASCQ) |
+| SCSI commands: TEST UNIT READY, REQUEST SENSE, READ(10), READ CD, READ TOC/PMA/ATIP, READ CAPACITY, GET CONFIGURATION, READ DVD STRUCTURE (physical, copyright, disc key), READ DISC STRUCTURE (Blu-ray Volume ID, data keys), REPORT KEY, SEND KEY, SET CD SPEED, MODE SENSE/SELECT page 01h | T10 [MMC (Multi-Media Commands)](https://www.t10.org/drafts.htm) and SPC (sense keys and ASC/ASCQ) |
+| Blu-ray content protection (AACS keys, MKB, unit keys, aligned units) | [AACS specifications](https://aacsla.com/specifications/) (Common and Pre-recorded Video Book), as implemented by libaacs |
+| MPEG-2 transport stream packets in `.m2ts` (192-byte source packets, descriptors) | ISO/IEC 13818-1 and the Blu-ray BDMV format, as used by libbdplus |
+| CD sectors (2352 bytes), TOC and sessions | IEC 60908 (Red Book), ECMA-130 (CD-ROM), and the CUE sheet format of CDRWIN |
 | DVD physical format, layers, OTP addressing (the DVD-9 size calculation) | [ECMA-267](https://ecma-international.org/publications-and-standards/standards/ecma-267/) (DVD-ROM) |
 | MPEG-2 program stream packs and the PES scrambling bits | ISO/IEC 13818-1 (MPEG-2 Systems) |
 | ISO 9660 volume descriptor and directories (volume label, file list, VOB locations) | [ECMA-119](https://ecma-international.org/publications-and-standards/standards/ecma-119/) |
