@@ -94,7 +94,8 @@ Open xISOBurn and insert the disc. Move between buttons with the D-pad and press
 | Bottom line | What is happening now, or the result of the last action |
 
 Usually you only need **Detect disc** and then **Copy / resume**. Keep the app open while it copies.
-The screen stays on by itself.
+The screen stays on by itself. When the copy is complete (every sector read), the app ejects the
+disc; Settings can turn that off.
 
 **Damaged discs:** the copy first takes everything that reads easily, then goes back to the damaged
 areas, slower and sector by sector. Sectors that still fail are listed in the log and in the `.map`
@@ -169,6 +170,7 @@ the same file. Changes apply from the next copy.
 | Decrypt Blu-ray | on | Decrypts AACS and applies BD+ with the uploaded key files. Off copies the streams still encrypted |
 | Mark the image as decrypted | off | Blu-ray: renames `AACS` in the image so VLC and Kodi open it without keys (the ISO is then no longer identical to the disc) |
 | Look up CD names on MusicBrainz | on | Audio CDs without CD-TEXT: asks MusicBrainz for the album and track names (sends only the disc ID). Off = no internet access |
+| Eject the disc when the copy is complete | on | Ejects the disc once every sector is read and the checksums are written. With unreadable sectors left, the disc stays in for **Retry failed** |
 | Sectors per read | 32 | How much is read at once in the good areas (lowered automatically for raw CD sectors) |
 | Timeout per command | 20 s | How long to wait for the drive on each read |
 | Skip ahead over areas with many errors | on | Copies the easy parts first and comes back to the damaged ones |

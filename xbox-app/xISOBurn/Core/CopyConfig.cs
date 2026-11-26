@@ -64,6 +64,8 @@ namespace xISOBurn.Core
         public bool MarkBlurayDecrypted = false;
         /// <summary>Audio CDs: look the album and track names up on MusicBrainz when the CD-TEXT does not have them.</summary>
         public bool CdLookupOnline = true;
+        /// <summary>Eject the disc when a copy is complete (every sector read, checksums done).</summary>
+        public bool EjectWhenDone = true;
         /// <summary>
         /// Where the copies go: "" = the app storage on the Xbox, or a folder on a USB drive ("E:\copies"). Chosen
         /// with the folder browser in Settings or on the web page.
@@ -110,6 +112,7 @@ namespace xISOBurn.Core
             cfg.DecryptBluray = flag("DecryptBluray");
             cfg.MarkBlurayDecrypted = flag("MarkBlurayDecrypted");
             cfg.CdLookupOnline = flag("CdLookupOnline");
+            cfg.EjectWhenDone = flag("EjectWhenDone");
             if (f.ContainsKey("OutputFolder")) cfg.OutputFolder = get("OutputFolder");
             cfg.SkipOnErrors = flag("SkipOnErrors");
             cfg.KeepAwake = flag("KeepAwake");
@@ -181,6 +184,7 @@ namespace xISOBurn.Core
                 cfg.DecryptBluray = o.GetNamedBoolean("DecryptBluray", cfg.DecryptBluray);
                 cfg.MarkBlurayDecrypted = o.GetNamedBoolean("MarkBlurayDecrypted", cfg.MarkBlurayDecrypted);
                 cfg.CdLookupOnline = o.GetNamedBoolean("CdLookupOnline", cfg.CdLookupOnline);
+                cfg.EjectWhenDone = o.GetNamedBoolean("EjectWhenDone", cfg.EjectWhenDone);
                 cfg.OutputFolder = o.GetNamedString("OutputFolder", cfg.OutputFolder);
                 cfg.WebPort = (int)o.GetNamedNumber("WebPort", cfg.WebPort);
                 cfg.WebPinRequired = o.GetNamedBoolean("WebPinRequired", cfg.WebPinRequired);
@@ -242,6 +246,7 @@ namespace xISOBurn.Core
             sb.Append("  \"DecryptBluray\": ").Append(DecryptBluray ? "true" : "false").Append(",\n");
             sb.Append("  \"MarkBlurayDecrypted\": ").Append(MarkBlurayDecrypted ? "true" : "false").Append(",\n");
             sb.Append("  \"CdLookupOnline\": ").Append(CdLookupOnline ? "true" : "false").Append(",\n");
+            sb.Append("  \"EjectWhenDone\": ").Append(EjectWhenDone ? "true" : "false").Append(",\n");
             sb.Append("  \"OutputFolder\": ").Append(JsonValue.CreateStringValue(OutputFolder ?? "").Stringify()).Append(",\n");
             sb.Append("  \"WebPort\": ").Append(WebPort.ToString(inv)).Append(",\n");
             sb.Append("  \"WebPinRequired\": ").Append(WebPinRequired ? "true" : "false").Append(",\n");
@@ -262,6 +267,7 @@ namespace xISOBurn.Core
                    " | decrypt CSS: " + (DecryptCss ? "yes" : "no") +
                    " | decrypt Blu-ray: " + (DecryptBluray ? (MarkBlurayDecrypted ? "yes, marked" : "yes") : "no") +
                    " | CD names online: " + (CdLookupOnline ? "yes" : "no") +
+                   " | eject when done: " + (EjectWhenDone ? "yes" : "no") +
                    " | destination: " + (string.IsNullOrEmpty(OutputFolder) ? "Xbox" : "USB " + OutputFolder) +
                    " | web port " + WebPort + (WebPinRequired ? " with PIN" : " without PIN") +
                    " | keep awake: " + (KeepAwake ? "yes" : "no");

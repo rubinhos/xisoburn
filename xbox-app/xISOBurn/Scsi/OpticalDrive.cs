@@ -119,6 +119,17 @@ namespace xISOBurn.Scsi
         }
 
         /// <summary>
+        /// Ejects the disc: PREVENT ALLOW MEDIUM REMOVAL (allow), then START STOP UNIT with LoEj. Returns
+        /// null when the drive accepted it, or why not. (Part of what the shared engine expects of a drive.)
+        /// </summary>
+        public async Task<string> EjectAsync()
+        {
+            await SendAsync(ScsiCommands.PreventAllowMediumRemoval(false), 0, null, 0, 10);
+            var r = await SendAsync(ScsiCommands.Eject(), 0, null, 0, 30);
+            return r.Success ? null : r.Describe();
+        }
+
+        /// <summary>
         /// Sends a CDB. If dataLength > 0 it is a read command (DATA IN) and the data is copied to
         /// dest[destOffset..]. Never throws: errors come back in the ScsiResult.
         /// </summary>

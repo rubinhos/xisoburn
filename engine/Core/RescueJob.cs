@@ -92,6 +92,8 @@ namespace xISOBurn.Core
         public string Sha256;
         /// <summary>All the checksums of the finished image (also in NAME.hashes); null until computed.</summary>
         public ImageHashes Hashes;
+        /// <summary>The copy was complete and the disc was ejected (CopyConfig.EjectWhenDone).</summary>
+        public bool Ejected;
         public string ImagePath, MapPath;
         public TimeSpan Elapsed;
     }
@@ -431,6 +433,23 @@ namespace xISOBurn.Core
             LogFileCoverage();
             if (result.Sha256 != null) _log.Info("SHA-256 of the image: " + result.Sha256);
             _log.Info("Map: " + _mapPath);
+
+            // A complete copy (every sector read, checksums done): out with the disc, if wanted. With
+            // unreadable sectors left the disc stays in, for "Retry failed".
+            if (_cfg.EjectWhenDone && _cfg.WriteImage && result.Finished && !result.Cancelled && result.Error == null &&
+                result.Bad == 0 && result.Pending == 0 && result.Untried == 0 && result.Sha256 != null)
+            {
+                try
+                {
+                    string how = await _drive.EjectAsync();
+                    result.Ejected = how == null;
+                    _log.Info(how == null ? "Disc ejected (EjectWhenDone)." : "Could not eject the disc: " + how);
+                }
+                catch (Exception ex)
+                {
+                    _log.Info("Could not eject the disc: " + ex.Message);
+                }
+            }
             return result;
         }
 

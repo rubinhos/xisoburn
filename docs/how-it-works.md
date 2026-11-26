@@ -246,6 +246,7 @@ the file with every current key, so the file always lists what the app uses.
   "DecryptBluray": true,
   "MarkBlurayDecrypted": false,
   "CdLookupOnline": true,
+  "EjectWhenDone": true,
   "OutputFolder": "",
   "WebPort": 8770,
   "WebPinRequired": true,
@@ -269,6 +270,7 @@ the file with every current key, so the file always lists what the app uses.
 | `DecryptBluray` | Decrypt AACS and apply BD+ while copying, with the key files (see Blu-ray above). `false` copies the stream files encrypted. |
 | `MarkBlurayDecrypted` | Rename `AACS` (and `BDSVM`) in the image so libbluray players open it without keys. |
 | `CdLookupOnline` | Audio CDs: look the album and track names up on MusicBrainz when the CD-TEXT does not have them. |
+| `EjectWhenDone` | Eject the disc at the end of a complete copy: every sector read and the checksums written. Not after a pause, an error, a partial range, a test run (`WriteImage` off), or when sectors are left unreadable (the disc stays in for "Retry failed"). |
 | `OutputFolder` | Where the copies go: `""` = the app storage on the Xbox, or a USB drive folder such as `"E:\copies"`. Chosen with the folder browser in Settings or on the web page. |
 | `WebPort` | Port of the web page. Changing it needs an app restart. |
 | `WebPinRequired`, `WebPin` | Ask for the 4–8 digit PIN shown on the Xbox screen. |

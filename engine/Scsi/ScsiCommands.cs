@@ -146,5 +146,23 @@ namespace xISOBurn.Scsi
             Bytes.PutBE16(cdb, 7, allocationLength);
             return cdb;
         }
+
+        /// <summary>PREVENT ALLOW MEDIUM REMOVAL (0x1E): prevent = false lets the disc out again.</summary>
+        public static byte[] PreventAllowMediumRemoval(bool prevent)
+        {
+            var cdb = new byte[6];
+            cdb[0] = 0x1E;
+            cdb[4] = (byte)(prevent ? 1 : 0);
+            return cdb;
+        }
+
+        /// <summary>START STOP UNIT (0x1B) with LoEj = 1, Start = 0: stops the disc and ejects it.</summary>
+        public static byte[] Eject()
+        {
+            var cdb = new byte[6];
+            cdb[0] = 0x1B;
+            cdb[4] = 0x02;              // LoEj
+            return cdb;
+        }
     }
 }
