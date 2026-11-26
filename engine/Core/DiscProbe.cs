@@ -40,12 +40,14 @@ namespace xISOBurn.Core
         /// Data-only CDs stay plain ISO images like DVDs.
         /// </summary>
         public bool RawCd;
+        /// <summary>Audio CD: album, artist and track names (CD-TEXT, MusicBrainz); null if unknown.</summary>
+        public CdInfo CdInfo;
         /// <summary>Bytes per sector of the image: 2352 for a raw CD, 2048 otherwise.</summary>
         public int SectorBytes { get { return RawCd ? ScsiCommands.CdRawSectorSize : SectorSize; } }
         /// <summary>The image file extension: ".bin" for a raw CD, ".iso" otherwise.</summary>
         public string ImageExtension { get { return RawCd ? ".bin" : ".iso"; } }
 
-        public static async Task<DiscProbe> RunAsync(OpticalDrive drive, uint timeout, Logger log)
+        public static async Task<DiscProbe> RunAsync(OpticalDrive drive, uint timeout, Logger log, CdLookup cdLookup = null)
         {
             var p = new DiscProbe();
             log.Section("Detecting the disc");
@@ -76,7 +78,12 @@ namespace xISOBurn.Core
             log.Info("READ CAPACITY: " + (p.ReadCapacitySectors >= 0 ? p.ReadCapacitySectors + " sectors" : rc.Describe()));
 
             if (MmcProfiles.IsCd(p.Profile))
+            {
                 await ReadTocAsync(p, drive, timeout, log);
+                // Audio CD: album, artist and track names, for the image name and the cue sheet.
+                if (p.RawCd && p.Toc != null && cdLookup != null)
+                    p.CdInfo = await CdInfo.LookupAsync(drive, p.Toc, timeout, cdLookup, log);
+            }
 
             bool dvd = MmcProfiles.IsDvd(p.Profile);
             if (dvd || p.Profile < 0)
@@ -265,6 +272,8 @@ namespace xISOBurn.Core
             yield return "Volume: " + (VolumeLabel.Length > 0 ? VolumeLabel : "(no ISO9660)") + (Udf ? " | UDF" : "");
             if (Toc != null)
                 yield return "CD: " + Toc.Describe() + (RawCd ? " | copied raw to .bin + .cue" : "");
+            if (CdInfo != null)
+                yield return "Album: " + CdInfo.DisplayName + " (" + CdInfo.Source + ")";
             if (MmcProfiles.IsBluray(Profile) && Udf)
                 yield return "Protection: " + (Aacs ? "AACS" + (Bdplus ? " + BD+" : "") + " (decrypted while copying with the Blu-ray key files)" : "none") +
                              (Files.Count > 0 ? " | " + Files.Count + " files" : "");

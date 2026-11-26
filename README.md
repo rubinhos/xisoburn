@@ -29,7 +29,8 @@ nothing.
   mirror UDF metadata) so libbluray does not ask for keys. BD+ conversion tables come from the disc's
   BD+ program (with the libbdplus player files) or from a cached table, segment key (`SEGK`) tables
   included.
-- **CDs:** a data CD gives an ISO; an audio or mixed-mode CD is copied raw to `.bin` + `.cue`.
+- **CDs:** a data CD gives an ISO; an audio or mixed-mode CD is copied raw to `.bin` + `.cue`, named
+  "Artist - Album" with the track titles in the cue sheet, from the disc's CD-TEXT or from MusicBrainz.
 - **Copies on the Xbox or on a USB drive:** choose the destination in **Settings** (or **change
   destination** on the web page). Blu-ray images need a USB drive in exFAT or NTFS: a 39 GiB image was
   written as one file to a USB drive in Developer Mode.
@@ -106,8 +107,10 @@ ISO plays in any player. The disc has to be from the console's region.
 them the copy still works, but the video stays encrypted. If you add the keys later, **Copy / resume**
 decrypts what was already copied.
 
-**CDs:** nothing to do either. An audio CD becomes `NAME.bin` + `NAME.cue`, which media players and
-burning programs open.
+**CDs:** nothing to do either. An audio CD becomes `Artist - Album.bin` + `.cue`, which media players
+and burning programs open. **Detect disc** finds the names in the disc's CD-TEXT, or on MusicBrainz
+(the Xbox needs internet for that; Settings can turn it off), and shows them under **Disc**. Unknown
+discs keep the name `disc`, or the **File name** you set.
 
 ### 3. Download on the PC
 
@@ -165,6 +168,7 @@ the same file. Changes apply from the next copy.
 | Decrypt CSS | on | Off copies DVD-Video (and DVD-Audio) as it is on the disc, still encrypted |
 | Decrypt Blu-ray | on | Decrypts AACS and applies BD+ with the uploaded key files. Off copies the streams still encrypted |
 | Mark the image as decrypted | off | Blu-ray: renames `AACS` in the image so VLC and Kodi open it without keys (the ISO is then no longer identical to the disc) |
+| Look up CD names on MusicBrainz | on | Audio CDs without CD-TEXT: asks MusicBrainz for the album and track names (sends only the disc ID). Off = no internet access |
 | Sectors per read | 32 | How much is read at once in the good areas (lowered automatically for raw CD sectors) |
 | Timeout per command | 20 s | How long to wait for the drive on each read |
 | Skip ahead over areas with many errors | on | Copies the easy parts first and comes back to the damaged ones |

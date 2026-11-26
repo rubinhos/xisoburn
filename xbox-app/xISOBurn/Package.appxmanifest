@@ -76,8 +76,10 @@
   <Capabilities>
     <!--
       privateNetworkClientServer: connections to the local network (home/work), which is where the
-      PC receiver lives. internetClient is not needed: the app never talks to the internet.
+      PC receiver lives. internetClient: only for the album and track names of audio CDs (MusicBrainz),
+      which can be turned off in Settings.
     -->
+    <Capability Name="internetClient" />
     <Capability Name="privateNetworkClientServer" />
     <!-- removableStorage: USB drives on the Xbox, for copies too big for the app's own storage (Blu-ray). -->
     <uap:Capability Name="removableStorage" />
