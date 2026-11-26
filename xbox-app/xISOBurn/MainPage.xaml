@@ -115,6 +115,7 @@
                     <CheckBox x:Name="DecryptCssBox" Content="Decrypt CSS (DVD-Video) and CPPM (DVD-Audio) while copying (off = copy them scrambled)"/>
                     <CheckBox x:Name="DecryptBlurayBox" Content="Decrypt Blu-ray (AACS, BD+) while copying, with the keys uploaded on the web page"/>
                     <CheckBox x:Name="MarkDecryptedBox" Content="Blu-ray: mark the image as decrypted (renames AACS, so VLC and Kodi open it; the ISO is then no longer identical to the disc)"/>
+                    <CheckBox x:Name="CdLookupBox" Content="Audio CDs: look up the album and track names on MusicBrainz (internet) when the disc has no CD-TEXT"/>
 
                     <!-- Destination: the app storage or a folder on a USB drive (browsed here; also on the web page). -->
                     <TextBlock Text="Destination of the copies" FontWeight="SemiBold" FontSize="15" Margin="0,8,0,0"/>

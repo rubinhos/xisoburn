@@ -173,8 +173,24 @@ an ISO, like a DVD. A CD with audio tracks is copied **raw**:
 - only the first session is copied. On a multi-session disc (CD-Extra) the tracks of later sessions
   are listed in the log and left out, because the gap between sessions cannot be read.
 
-What it doesn't do: no read offset correction, no subchannel data, no `INDEX 00` (pre-gaps), and no
-CD-TEXT. The image plays and burns normally, but the checksums of audio tracks will usually not match
+**Album and track names.** When **Detect disc** finds an audio CD, the app looks for its names:
+
+1. the cache, `cdinfo/<disc ID>.txt` next to the settings (a disc named once keeps its name, also
+   offline; edit the file to correct a name, or delete it to look the disc up again);
+2. the disc's CD-TEXT (READ TOC format 5): album, artist, track titles and performers, the UPC/EAN
+   and ISRC codes; block 0, ISO 8859-1 text only;
+3. for what is still missing, [MusicBrainz](https://musicbrainz.org) (setting **Look up the album
+   and track names on MusicBrainz**, on by default). The app computes the disc ID from the TOC the
+   way libdiscid does, and sends only that ID to `musicbrainz.org/ws/2/discid`, with a User-Agent
+   naming xISOBurn and its project page. The first matching release is used; the others are listed
+   in the log. When the disc is unknown, the log gives the link to add it to MusicBrainz.
+
+With a name, the image is called `Artist - Album.bin` (unless **File name** is set), and the cue
+sheet gets `PERFORMER` and `TITLE` for the disc and for each track, `CATALOG`, `ISRC` and a
+`REM MUSICBRAINZ_DISCID` line. The cue sheet is UTF-8.
+
+What it doesn't do: no read offset correction, no subchannel data and no `INDEX 00` (pre-gaps).
+The image plays and burns normally, but the checksums of audio tracks will usually not match
 redump.org, which corrects the drive's read offset.
 
 ## Files (LocalState)
@@ -228,6 +244,7 @@ the file with every current key, so the file always lists what the app uses.
   "DecryptCss": true,
   "DecryptBluray": true,
   "MarkBlurayDecrypted": false,
+  "CdLookupOnline": true,
   "OutputFolder": "",
   "WebPort": 8770,
   "WebPinRequired": true,
@@ -250,6 +267,7 @@ the file with every current key, so the file always lists what the app uses.
 | `DecryptCss` | Decrypt CSS-protected DVD-Video (and CPPM DVD-Audio) while copying. `false` copies the sectors as the drive returns them. |
 | `DecryptBluray` | Decrypt AACS and apply BD+ while copying, with the key files (see Blu-ray above). `false` copies the stream files encrypted. |
 | `MarkBlurayDecrypted` | Rename `AACS` (and `BDSVM`) in the image so libbluray players open it without keys. |
+| `CdLookupOnline` | Audio CDs: look the album and track names up on MusicBrainz when the CD-TEXT does not have them. |
 | `OutputFolder` | Where the copies go: `""` = the app storage on the Xbox, or a USB drive folder such as `"E:\copies"`. Chosen with the folder browser in Settings or on the web page. |
 | `WebPort` | Port of the web page. Changing it needs an app restart. |
 | `WebPinRequired`, `WebPin` | Ask for the 4–8 digit PIN shown on the Xbox screen. |

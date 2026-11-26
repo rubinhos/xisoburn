@@ -94,14 +94,34 @@ namespace xISOBurn.Core
             return (lba / 4500).ToString("00") + ":" + (lba / 75 % 60).ToString("00") + ":" + (lba % 75).ToString("00");
         }
 
-        /// <summary>The cue sheet for a single raw image (the .bin starts at LBA 0).</summary>
-        public string ToCue(string binName)
+        private static string Quoted(string s) { return "\"" + (s ?? "").Replace("\"", "'").Trim() + "\""; }
+
+        /// <summary>
+        /// The cue sheet for a single raw image (the .bin starts at LBA 0), with the album, artist and
+        /// track names when they are known (CD-TEXT or MusicBrainz).
+        /// </summary>
+        public string ToCue(string binName, CdInfo info = null)
         {
             var sb = new StringBuilder();
-            sb.Append("FILE \"").Append(binName.Replace("\"", "'")).Append("\" BINARY\n");
+            if (info != null)
+            {
+                if (info.MusicBrainzDiscId.Length > 0) sb.Append("REM MUSICBRAINZ_DISCID ").Append(info.MusicBrainzDiscId).Append('\n');
+                if (info.Catalog.Length > 0) sb.Append("CATALOG ").Append(info.Catalog).Append('\n');
+                if (info.Artist.Length > 0) sb.Append("PERFORMER ").Append(Quoted(info.Artist)).Append('\n');
+                if (info.Album.Length > 0) sb.Append("TITLE ").Append(Quoted(info.Album)).Append('\n');
+            }
+            sb.Append("FILE ").Append(Quoted(binName)).Append(" BINARY\n");
             foreach (var t in Tracks)
             {
                 sb.Append("  TRACK ").Append(t.Number.ToString("00")).Append(' ').Append(t.CueType).Append('\n');
+                CdTrackInfo ti;
+                if (info != null && info.Tracks.TryGetValue(t.Number, out ti))
+                {
+                    if (ti.Title.Length > 0) sb.Append("    TITLE ").Append(Quoted(ti.Title)).Append('\n');
+                    string performer = ti.Artist.Length > 0 ? ti.Artist : info.Artist;
+                    if (performer.Length > 0) sb.Append("    PERFORMER ").Append(Quoted(performer)).Append('\n');
+                    if (ti.Isrc.Length == 12) sb.Append("    ISRC ").Append(ti.Isrc).Append('\n');
+                }
                 if (t.Audio && (t.Control & 0x01) != 0) sb.Append("    FLAGS PRE\n");
                 sb.Append("    INDEX 01 ").Append(Msf(t.Lba)).Append('\n');
             }

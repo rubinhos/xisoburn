@@ -173,12 +173,18 @@ namespace xISOBurn.Core
         public static string BaseNameFor(CopyConfig cfg, DiscProbe probe)
         {
             string name = cfg.OutputName;
+            // An audio CD: "Artist - Album" from CD-TEXT or MusicBrainz, which beats the volume label of a mixed-mode CD.
+            if (string.IsNullOrWhiteSpace(name) && probe.RawCd && probe.CdInfo != null && probe.CdInfo.HasAlbum) name = probe.CdInfo.DisplayName;
             if (string.IsNullOrWhiteSpace(name)) name = probe.VolumeLabel;
             if (string.IsNullOrWhiteSpace(name)) name = "disc";
             var sb = new StringBuilder();
             foreach (char c in name.Trim())
                 sb.Append(Array.IndexOf(Path.GetInvalidFileNameChars(), c) >= 0 ? '_' : c);
-            return sb.ToString();
+            // Windows drops trailing dots and spaces from file names, and album names can be long.
+            string result = sb.ToString();
+            if (result.Length > 120) result = result.Substring(0, 120);
+            result = result.TrimEnd('.', ' ');
+            return result.Length > 0 ? result : "disc";
         }
 
         /// <param name="extraRetryPass">
@@ -236,7 +242,7 @@ namespace xISOBurn.Core
                 string cueName = baseName + ".cue";
                 try
                 {
-                    await _store.WriteTextAtomicAsync(cueName, _probe.Toc.ToCue(_imageName));
+                    await _store.WriteTextAtomicAsync(cueName, _probe.Toc.ToCue(_imageName, _probe.CdInfo));
                     _log.Info("CD: raw copy (2352-byte sectors, READ CD) to " + _imageName + "; cue sheet " + cueName + " (" +
                               _probe.Toc.Describe() + ").");
                 }

@@ -364,7 +364,13 @@ namespace xISOBurn
         {
             if (!await EnsureDriveAsync()) return false;
             var drive = _drive;
-            _probe = await Task.Run(() => DiscProbe.RunAsync(drive, timeout, _log));
+            string cfgMsg;
+            var lookup = new CdLookup
+            {
+                CacheFolder = System.IO.Path.Combine(_folder, "cdinfo"),
+                Online = CopyConfig.Load(_folder, out cfgMsg).CdLookupOnline,
+            };
+            _probe = await Task.Run(() => DiscProbe.RunAsync(drive, timeout, _log, lookup));
             if (!_probe.Ready && _probe.NotReadyReason.Contains("IOCTL"))
                 CloseDrive(); // the handle may have gone stale; reopen next time
             await CheckPreviousRescueAsync();
@@ -632,6 +638,7 @@ namespace xISOBurn
             DecryptCssBox.IsChecked = cfg.DecryptCss;
             DecryptBlurayBox.IsChecked = cfg.DecryptBluray;
             MarkDecryptedBox.IsChecked = cfg.MarkBlurayDecrypted;
+            CdLookupBox.IsChecked = cfg.CdLookupOnline;
             _destChoice = cfg.OutputFolder ?? "";
             ShowDestChoice();
             var ignored = BrowseAsync(_destChoice);
@@ -808,6 +815,7 @@ namespace xISOBurn
                 { "DecryptCss", DecryptCssBox.IsChecked == true ? "true" : "false" },
                 { "DecryptBluray", DecryptBlurayBox.IsChecked == true ? "true" : "false" },
                 { "MarkBlurayDecrypted", MarkDecryptedBox.IsChecked == true ? "true" : "false" },
+                { "CdLookupOnline", CdLookupBox.IsChecked == true ? "true" : "false" },
                 { "OutputFolder", _destChoice ?? "" },
                 { "SectorsPerRead", TagOf(SectorsPerReadBox, "32") },
                 { "TimeoutSeconds", TimeoutBox.Text },
