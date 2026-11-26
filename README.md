@@ -82,7 +82,7 @@ Open xISOBurn and insert the disc. Move between buttons with the D-pad and press
 | On the screen | What it is |
 |---------------|------------|
 | Top line | The address to open on the PC and the PIN |
-| **Detect disc** | Reads the disc type, size, volume name and protection, and shows them in **Disc** |
+| **Detect disc** | Reads the disc type, size, volume name and protection (and the album and track names of an audio CD), and shows them in **Disc** |
 | **Copy / resume** | Starts the copy, or continues a paused or unfinished one from where it stopped |
 | **Cancel (B)** | Pauses the copy. Nothing is lost: **Copy / resume** continues later, even after the app was closed |
 | **Retry failed** | Tries the sectors that could not be read once more. It is only enabled when there are some |
@@ -162,10 +162,10 @@ the same file. Changes apply from the next copy.
 | Ask for the PIN | on | Turn it off only on a network you trust |
 | PIN | random | 4 to 8 digits. **New PIN** makes another one |
 | Keep the console awake | off | Stops the console from dimming and idling off while the app is open, so it is not suspended (the web page stops answering while it is). Applies at once |
-| File name | empty | Name of the ISO. Empty uses the disc's volume name |
+| File name | empty | Name of the image. Empty uses the disc's volume name, or "Artist - Album" for an audio CD |
 | Destination of the copies | the Xbox | The app storage, or a folder on a USB drive (exFAT or NTFS for Blu-ray). **Use this folder** picks the folder shown |
 | Write the image | on | Off only tests the drive and builds the map, without saving the ISO |
-| Decrypt CSS | on | Off copies DVD-Video (and DVD-Audio) as it is on the disc, still encrypted |
+| Decrypt CSS and CPPM | on | Off copies DVD-Video and DVD-Audio as they are on the disc, still encrypted |
 | Decrypt Blu-ray | on | Decrypts AACS and applies BD+ with the uploaded key files. Off copies the streams still encrypted |
 | Mark the image as decrypted | off | Blu-ray: renames `AACS` in the image so VLC and Kodi open it without keys (the ISO is then no longer identical to the disc) |
 | Look up CD names on MusicBrainz | on | Audio CDs without CD-TEXT: asks MusicBrainz for the album and track names (sends only the disc ID). Off = no internet access |
@@ -208,7 +208,7 @@ A CD with audio tracks becomes `NAME.bin` (2352 bytes per sector) and `NAME.cue`
 [how-it-works.md](docs/how-it-works.md#audio-and-mixed-mode-cds)).
 The `.sha256` holds the hash of the finished image, and the `.hashes` file its size, CRC32, MD5,
 SHA-1 and SHA-256 (the checksums redump.org lists). On CSS discs the image is decrypted, so it only
-matches a Redump entry made from decrypted data; turn off **Decrypt CSS** to keep the sectors as on
+matches a Redump entry made from decrypted data; turn off **Decrypt CSS and CPPM** to keep the sectors as on
 the disc.
 
 ## References
@@ -260,6 +260,16 @@ The paths below are in `engine/`, except the Xbox drive access in `xbox-app/xISO
   - a resumable map of sector states.
 
   The `.map` format is xISOBurn's own, and no ddrescue code is used.
+- **[MusicBrainz](https://musicbrainz.org)**, the open music database: the album and track names of
+  audio CDs come from its [web service](https://musicbrainz.org/doc/MusicBrainz_API) (`/ws/2/discid`).
+  The disc ID is computed as [libdiscid](https://musicbrainz.org/doc/libdiscid) does
+  ([Disc ID calculation](https://musicbrainz.org/doc/Disc_ID_Calculation)), in `Core/MusicBrainz.cs`;
+  no libdiscid code is used.
+- **[MusicBrainz](https://musicbrainz.org)**, the open music database: the album and track names of
+  audio CDs come from its [web service](https://musicbrainz.org/doc/MusicBrainz_API) (`/ws/2/discid`).
+  The disc ID is computed as [libdiscid](https://musicbrainz.org/doc/libdiscid) does
+  ([Disc ID calculation](https://musicbrainz.org/doc/Disc_ID_Calculation)), in `Core/MusicBrainz.cs`;
+  no libdiscid code is used.
 
 ### Specifications
 
@@ -268,7 +278,7 @@ The paths below are in `engine/`, except the Xbox drive access in `xbox-app/xISO
 | SCSI commands: TEST UNIT READY, REQUEST SENSE, READ(10), READ CD, READ TOC/PMA/ATIP, READ CAPACITY, GET CONFIGURATION, READ DVD STRUCTURE (physical, copyright, disc key), READ DISC STRUCTURE (Blu-ray Volume ID, data keys), REPORT KEY, SEND KEY, SET CD SPEED, MODE SENSE/SELECT page 01h | T10 [MMC (Multi-Media Commands)](https://www.t10.org/drafts.htm) and SPC (sense keys and ASC/ASCQ) |
 | Blu-ray content protection (AACS keys, MKB, unit keys, aligned units) | [AACS specifications](https://aacsla.com/specifications/) (Common and Pre-recorded Video Book), as implemented by libaacs |
 | MPEG-2 transport stream packets in `.m2ts` (192-byte source packets, descriptors) | ISO/IEC 13818-1 and the Blu-ray BDMV format, as used by libbdplus |
-| CD sectors (2352 bytes), TOC and sessions | IEC 60908 (Red Book), ECMA-130 (CD-ROM), and the CUE sheet format of CDRWIN |
+| CD sectors (2352 bytes), TOC and sessions, CD-TEXT | IEC 60908 (Red Book), ECMA-130 (CD-ROM), MMC (READ TOC format 5 for CD-TEXT), and the CUE sheet format of CDRWIN |
 | DVD physical format, layers, OTP addressing (the DVD-9 size calculation) | [ECMA-267](https://ecma-international.org/publications-and-standards/standards/ecma-267/) (DVD-ROM) |
 | MPEG-2 program stream packs and the PES scrambling bits | ISO/IEC 13818-1 (MPEG-2 Systems) |
 | ISO 9660 volume descriptor and directories (volume label, file list, VOB locations) | [ECMA-119](https://ecma-international.org/publications-and-standards/standards/ecma-119/) |
@@ -292,6 +302,7 @@ The paths below are in `engine/`, except the Xbox drive access in `xbox-app/xISO
 
 - GitHub Actions: [`actions/checkout`](https://github.com/actions/checkout),
   [`microsoft/setup-msbuild`](https://github.com/microsoft/setup-msbuild),
+  [`actions/setup-dotnet`](https://github.com/actions/setup-dotnet) (the web page screenshots),
   [`actions/upload-artifact`](https://github.com/actions/upload-artifact).
 
 ## License
