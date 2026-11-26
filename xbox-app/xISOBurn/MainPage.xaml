@@ -110,7 +110,7 @@
                     </StackPanel>
 
                     <TextBlock Text="Copy" FontWeight="SemiBold" FontSize="15" Margin="0,8,0,0"/>
-                    <TextBox x:Name="OutputNameBox" Header="File name (empty = the disc's volume label)"/>
+                    <TextBox x:Name="OutputNameBox" Header="File name (empty = the disc's volume label, or Artist - Album for an audio CD)"/>
                     <CheckBox x:Name="WriteImageBox" Content="Write the image (off = only test the drive and build the map)"/>
                     <CheckBox x:Name="DecryptCssBox" Content="Decrypt CSS (DVD-Video) and CPPM (DVD-Audio) while copying (off = copy them scrambled)"/>
                     <CheckBox x:Name="DecryptBlurayBox" Content="Decrypt Blu-ray (AACS, BD+) while copying, with the keys uploaded on the web page"/>
