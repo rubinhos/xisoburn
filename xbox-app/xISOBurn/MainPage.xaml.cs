@@ -531,6 +531,8 @@ namespace xISOBurn
                     StatusText.Text += " Blu-ray: not decrypted (no usable keys; see the log).";
                 if (result.RefusedThisRun >= RescueJob.RefusalNoticeAfter)
                     StatusText.Text += " " + RefusalMessage(result.RefusedThisRun);
+                if (result.Ejected)
+                    StatusText.Text += " The disc was ejected.";
             }
             catch (Exception ex)
             {
@@ -639,6 +641,7 @@ namespace xISOBurn
             DecryptBlurayBox.IsChecked = cfg.DecryptBluray;
             MarkDecryptedBox.IsChecked = cfg.MarkBlurayDecrypted;
             CdLookupBox.IsChecked = cfg.CdLookupOnline;
+            EjectBox.IsChecked = cfg.EjectWhenDone;
             _destChoice = cfg.OutputFolder ?? "";
             ShowDestChoice();
             var ignored = BrowseAsync(_destChoice);
@@ -816,6 +819,7 @@ namespace xISOBurn
                 { "DecryptBluray", DecryptBlurayBox.IsChecked == true ? "true" : "false" },
                 { "MarkBlurayDecrypted", MarkDecryptedBox.IsChecked == true ? "true" : "false" },
                 { "CdLookupOnline", CdLookupBox.IsChecked == true ? "true" : "false" },
+                { "EjectWhenDone", EjectBox.IsChecked == true ? "true" : "false" },
                 { "OutputFolder", _destChoice ?? "" },
                 { "SectorsPerRead", TagOf(SectorsPerReadBox, "32") },
                 { "TimeoutSeconds", TimeoutBox.Text },

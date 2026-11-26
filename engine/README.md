@@ -28,7 +28,7 @@ Each app compiles these files next to the engine, with the same names and member
 
 | Type | Members the engine uses |
 |------|-------------------------|
-| `xISOBurn.Scsi.OpticalDrive` | `SectorSize`, `MaxTransferBytes`, `DeviceId`, `SendAsync`, `SendOutAsync`, `ReadSectorsAsync` |
+| `xISOBurn.Scsi.OpticalDrive` | `SectorSize`, `MaxTransferBytes`, `DeviceId`, `SendAsync`, `SendOutAsync`, `ReadSectorsAsync`, `EjectAsync` (null when the disc went out, else why not) |
 | `xISOBurn.Core.CopyStore` | `OpenAsync(outputFolder, appFolder, subfolder)` (subfolder: an audio CD's own folder, which an app may ignore), `OpenWriteAsync`, `OpenReadAsync`, `SizeAsync`, `DeleteAsync`, `ReplaceAsync`, `FreeBytesAsync`, `ReadTextAsync`, `WriteTextAtomicAsync`, `Description`, `DisplayPath`, `LimitedTo4GiB`, `FormatBytes` |
-| `xISOBurn.Core.CopyConfig` | the copy settings: `SectorsPerRead`, `TimeoutSeconds`, `SkipOnErrors`, `RetryPasses`, `RetryReadSpeedKBps`, `DriveReadRetryCount`, `StartSector`, `SectorLimit`, `WriteImage`, `OutputName`, `OutputFolder`, `DecryptCss`, `DecryptBluray`, `MarkBlurayDecrypted` |
+| `xISOBurn.Core.CopyConfig` | the copy settings: `SectorsPerRead`, `TimeoutSeconds`, `SkipOnErrors`, `RetryPasses`, `RetryReadSpeedKBps`, `DriveReadRetryCount`, `StartSector`, `SectorLimit`, `WriteImage`, `OutputName`, `OutputFolder`, `DecryptCss`, `DecryptBluray`, `MarkBlurayDecrypted`, `EjectWhenDone` |
 | `xISOBurn.Platform` | `AddKeysHint`, `ResetDriveHint`, `OtherDestinationHint`: the words that differ between the apps |
