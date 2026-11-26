@@ -187,6 +187,23 @@ namespace xISOBurn.Core
             return result.Length > 0 ? result : "disc";
         }
 
+        /// <summary>
+        /// The copy's own folder inside the destination, or null. An audio CD gives several files (.bin, .cue,
+        /// .map, checksums), so it asks for a folder named like the image ("Artist - Album"); each app's
+        /// CopyStore decides whether it uses one (the Windows app does; on the Xbox the files are downloaded
+        /// one by one anyway, so they stay together in the destination).
+        /// </summary>
+        public static string SubfolderFor(CopyConfig cfg, DiscProbe probe)
+        {
+            return probe.RawCd ? BaseNameFor(cfg, probe) : null;
+        }
+
+        /// <summary>The store of a disc's copy (destination, and its subfolder if any); also used by the UI.</summary>
+        public static Task<CopyStore> OpenStoreAsync(CopyConfig cfg, DiscProbe probe, string appFolder)
+        {
+            return CopyStore.OpenAsync(cfg.OutputFolder, appFolder, SubfolderFor(cfg, probe));
+        }
+
         /// <param name="extraRetryPass">
         /// "Retry failed" button: after the normal passes, one more retry pass over the bad sectors even
         /// if RetryPasses is already used up. Each press of the button is one more pass.
@@ -218,7 +235,7 @@ namespace xISOBurn.Core
             _mapName = baseName + ".map";
             try
             {
-                _store = await CopyStore.OpenAsync(_cfg.OutputFolder, _folder);
+                _store = await OpenStoreAsync(_cfg, _probe, _folder);
             }
             catch (Exception ex)
             {

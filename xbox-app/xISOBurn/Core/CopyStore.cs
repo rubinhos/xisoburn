@@ -70,8 +70,12 @@ namespace xISOBurn.Core
             await ReplaceAsync(tmp, name);
         }
 
-        /// <summary>The store for a setting; throws with a readable message if the USB folder is not there.</summary>
-        public static async Task<CopyStore> OpenAsync(string outputFolder, string appFolder)
+        /// <summary>
+        /// The store for a setting; throws with a readable message if the USB folder is not there.
+        /// 'subfolder' (an audio CD's own folder, from the engine) is not used on the Xbox: the web page
+        /// lists the copies of the destination itself, and the browser downloads each file on its own.
+        /// </summary>
+        public static async Task<CopyStore> OpenAsync(string outputFolder, string appFolder, string subfolder = null)
         {
             if (string.IsNullOrWhiteSpace(outputFolder)) return new LocalStore(appFolder);
             var folder = await UsbBrowser.ResolveAsync(outputFolder);

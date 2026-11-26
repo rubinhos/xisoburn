@@ -185,7 +185,8 @@ an ISO, like a DVD. A CD with audio tracks is copied **raw**:
    naming xISOBurn and its project page. The first matching release is used; the others are listed
    in the log. When the disc is unknown, the log gives the link to add it to MusicBrainz.
 
-With a name, the image is called `Artist - Album.bin` (unless **File name** is set), and the cue
+With a name, the image is called `Artist - Album.bin` (unless **File name** is set; the Windows app
+puts the files of an audio CD in a folder of the same name), and the cue
 sheet gets `PERFORMER` and `TITLE` for the disc and for each track, `CATALOG`, `ISRC` and a
 `REM MUSICBRAINZ_DISCID` line. The cue sheet is UTF-8.
 

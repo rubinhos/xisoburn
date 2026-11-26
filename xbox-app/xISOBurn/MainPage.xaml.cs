@@ -394,7 +394,7 @@ namespace xISOBurn
                 SectorStateMap map = null;
                 try
                 {
-                    var store = await CopyStore.OpenAsync(cfg.OutputFolder, _folder);
+                    var store = await RescueJob.OpenStoreAsync(cfg, _probe, _folder);
                     string text = await store.ReadTextAsync(mapName);
                     if (text != null)
                         map = await Task.Run(() => { string reason; return SectorStateMap.Parse(text, total, out reason); });
